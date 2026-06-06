@@ -271,7 +271,7 @@ scene.add(shadowPlane);
 //  STATE
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 let mode='leaves', particles=[], hitSrc=null, floorFound=false, lastT=0;
-let floorY=0, isDemo=false, envGroup=null, viewMode='angled';
+let floorY=0, isDemo=false, envGroup=null, viewMode='topdown';
 let personDetected=false, bodyPos={x:0,z:0}, prevBodyPos={x:0,z:0};
 let bodyVel={x:0,z:0}, moveSpeed=0;
 let camAllowed=false, poseFrameTime=performance.now(), fpsArr=[];
@@ -792,10 +792,14 @@ function xrLoop(time,frame){
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 function setDemoCamera(){
   if(viewMode==='angled'){
-    camera.position.set(0,1.6,2.5); camera.lookAt(0,0,-2);
+    // Standing person looking down at floor in front
+    camera.position.set(0, 2.2, 1.8);
+    camera.lookAt(0, 0, -1.5);
     document.getElementById('view-btn').textContent='📷 ANGLED';
   } else {
-    camera.position.set(0,8,.01); camera.lookAt(0,0,0);
+    // Ceiling projector view — straight down
+    camera.position.set(0, 7, 0.001);
+    camera.lookAt(0, 0, 0);
     document.getElementById('view-btn').textContent='🔭 TOP-DOWN';
   }
 }
@@ -812,7 +816,7 @@ function startDemo(){
   let lastD=0;
   function onPtr(cx,cy,click=false){
     const now=performance.now();
-    if(!click&&now-lastD<80) return; lastD=now;
+    if(!click&&now-lastD<50) return; lastD=now;
     const ray=new THREE.Raycaster();
     ray.setFromCamera(new THREE.Vector2((cx/innerWidth)*2-1,-(cy/innerHeight)*2+1),camera);
     const tgt=new THREE.Vector3();
@@ -824,12 +828,26 @@ function startDemo(){
   canvas3d.addEventListener('mousedown',e=>onPtr(e.clientX,e.clientY,true));
   canvas3d.addEventListener('touchstart',e=>onPtr(e.touches[0].clientX,e.touches[0].clientY,true),{passive:false});
 
-  let lastBB=0;
+  let lastBB=0, lastAuto=0;
   renderer.setAnimationLoop(t=>{
     updateParticles();
-    if(personDetected&&moveSpeed>.008&&t-lastBB>100){
-      burst(bodyPos.x,0,bodyPos.z); lastBB=t;
+
+    if(personDetected && moveSpeed>.006 && t-lastBB>100){
+      // Body detected — spawn at their feet position
+      // Clamp to visible floor area (-4 to 4 range)
+      const bx = Math.max(-4, Math.min(4, bodyPos.x));
+      const bz = Math.max(-4, Math.min(4, bodyPos.z));
+      burst(bx, 0, bz);
+      lastBB = t;
+    } else if(t - lastAuto > 300){
+      // No body / not moving — auto spawn at random floor positions
+      // so environment is always alive and visible
+      const ax = rand(-3, 3);
+      const az = rand(-3, 3);
+      burst(ax, 0, az);
+      lastAuto = t;
     }
+
     dirLight.position.set(camera.position.x+3,8,camera.position.z+4);
     dirLight.target.position.set(0,0,0); dirLight.target.updateMatrixWorld();
     renderer.render(scene,camera);
