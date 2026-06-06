@@ -93,7 +93,6 @@ canvas#c{display:block;width:100vw;height:100vh;}
   color:rgba(255,255,255,0.55);font-size:10px;font-weight:600;letter-spacing:0.1em;
   cursor:pointer;pointer-events:all;backdrop-filter:blur(8px);z-index:15;transition:all 0.2s;}
 
-
 /* CAMERA SWITCH BTN */
 #cam-switch{position:absolute;bottom:120px;right:14px;width:36px;height:36px;
   border-radius:50%;border:1px solid rgba(80,220,120,0.4);background:rgba(0,0,0,0.7);
@@ -120,7 +119,6 @@ canvas#c{display:block;width:100vw;height:100vh;}
 #cam-video{position:absolute;inset:0;width:100%;height:100%;
   object-fit:cover;transform:scaleX(-1);opacity:0.4;}
 #skel-canvas{position:absolute;inset:0;width:100%;height:100%;}
-/* No-camera placeholder */
 #no-cam-placeholder{position:absolute;inset:0;display:flex;flex-direction:column;
   align-items:center;justify-content:center;gap:6px;background:rgba(0,0,0,0.9);}
 #no-cam-placeholder .nc-icon{font-size:24px;opacity:0.3;}
@@ -158,7 +156,6 @@ canvas#c{display:block;width:100vw;height:100vh;}
   <h1>Floor Projection</h1>
   <div class="sub">Body-Reactive AR Environment</div>
 
-  <!-- Permission info card -->
   <div id="perm-card">
     <div class="perm-title">This experience needs</div>
     <div class="perm-items">
@@ -210,8 +207,6 @@ canvas#c{display:block;width:100vw;height:100vh;}
   <button class="mbt" data-m="flowers">🌸 Flowers</button>
   <button class="mbt" data-m="autumn">🍂 Autumn</button>
 </div>
-
-<!-- TRACKER PANEL -->
 
 <button id="cam-switch" title="Switch Camera">🔄</button>
 <div id="tracker-panel">
@@ -277,104 +272,351 @@ let bodyVel={x:0,z:0}, moveSpeed=0;
 let camAllowed=false, poseFrameTime=performance.now(), fpsArr=[];
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  TEXTURES
+//  TEXTURES — Photo-realistic versions
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 function rand(a,b){return a+Math.random()*(b-a);}
 
-function makeLeafTex(hue,sat,autumn=false){
-  const sz=256,cv=document.createElement('canvas');
+// ── Green leaf (dandelion-field style — image 1) ──
+function makeGreenLeafTex(variant){
+  const sz=256, cv=document.createElement('canvas');
   cv.width=cv.height=sz;
   const x=cv.getContext('2d');
-  x.translate(sz/2,sz/2);
-  x.beginPath();
-  x.moveTo(0,-90); x.bezierCurveTo(50,-70,70,-10,45,35);
-  x.bezierCurveTo(30,70,0,90,0,90);
-  x.bezierCurveTo(0,90,-30,70,-45,35);
-  x.bezierCurveTo(-70,-10,-50,-70,0,-90);
-  const g=x.createLinearGradient(0,-90,0,90);
-  g.addColorStop(0,`hsla(${hue},${sat}%,52%,1)`);
-  g.addColorStop(0.6,`hsla(${hue+5},${sat-15}%,37%,1)`);
-  g.addColorStop(1,`hsla(${hue-10},${sat-20}%,22%,1)`);
-  x.fillStyle=g; x.fill();
-  x.strokeStyle=`hsla(${hue},${sat-30}%,18%,0.7)`;
-  x.lineWidth=4; x.lineCap='round';
-  x.beginPath(); x.moveTo(0,-85); x.lineTo(0,100); x.stroke();
-  x.lineWidth=2;
-  for(let i=-4;i<=3;i++){
-    const yy=i*18,len=30-Math.abs(i)*3;
-    x.beginPath(); x.moveTo(0,yy); x.quadraticCurveTo(len*.5,yy+5,len,yy+15); x.stroke();
-    x.beginPath(); x.moveTo(0,yy); x.quadraticCurveTo(-len*.5,yy+5,-len,yy+15); x.stroke();
-  }
-  if(autumn) for(let i=0;i<15;i++){
-    x.fillStyle=`rgba(50,20,0,${Math.random()*.3})`;
-    x.beginPath(); x.arc((Math.random()-.5)*60,(Math.random()-.5)*140,Math.random()*6,0,Math.PI*2); x.fill();
-  }
-  return new THREE.CanvasTexture(cv);
-}
-function makeFlowerTex(hue){
-  const sz=256,cv=document.createElement('canvas');
-  cv.width=cv.height=sz;
-  const x=cv.getContext('2d');
-  x.translate(sz/2,sz/2);
-  [{count:8,r:45,w:16,offset:0,cl:20,cd:-10},{count:8,r:35,w:14,offset:Math.PI/8,cl:35,cd:0}].forEach(l=>{
-    for(let i=0;i<l.count;i++){
-      x.save(); x.rotate((Math.PI*2/l.count)*i+l.offset);
-      const pg=x.createRadialGradient(0,-l.r/2,2,0,-l.r/2,l.r);
-      pg.addColorStop(0,`hsla(${hue+l.cl},90%,85%,1)`);
-      pg.addColorStop(0.7,`hsla(${hue},85%,65%,1)`);
-      pg.addColorStop(1,`hsla(${hue+l.cd},80%,40%,1)`);
-      x.fillStyle=pg; x.beginPath(); x.ellipse(0,-l.r*.6,l.w,l.r,0,0,Math.PI*2); x.fill();
-      x.restore();
+
+  // Variants: 0=oval serrated, 1=elongated, 2=round clover-like
+  x.translate(sz/2, sz/2);
+
+  const shapes=[
+    // Oval with notched edges (dandelion leaf)
+    ()=>{
+      x.beginPath();
+      const n=18;
+      for(let i=0;i<=n;i++){
+        const t=i/n, a=t*Math.PI*2;
+        const baseR = 88;
+        const notch = (i%2===0) ? 1 : 0.80;
+        const rx=baseR*notch*(0.45+0.55*Math.abs(Math.cos(a)));
+        const ry=baseR*notch;
+        if(i===0) x.moveTo(Math.cos(a)*rx*0.5, Math.sin(a)*ry);
+        else x.lineTo(Math.cos(a)*rx*0.5, Math.sin(a)*ry);
+      }
+      x.closePath();
+    },
+    // Elongated lanceolate
+    ()=>{
+      x.beginPath();
+      x.moveTo(0,-95);
+      x.bezierCurveTo(32,-70, 42,-20, 38,10);
+      x.bezierCurveTo(28,40, 12,75, 0,95);
+      x.bezierCurveTo(-12,75,-28,40,-38,10);
+      x.bezierCurveTo(-42,-20,-32,-70, 0,-95);
+      x.closePath();
+    },
+    // Clover-style round
+    ()=>{
+      x.beginPath();
+      for(let i=0;i<3;i++){
+        x.save(); x.rotate((Math.PI*2/3)*i+Math.PI/6);
+        x.ellipse(0,-42, 28, 38, 0, 0, Math.PI*2);
+        x.restore();
+      }
     }
-  });
-  const cg=x.createRadialGradient(0,0,0,0,0,16);
-  cg.addColorStop(0,'#fff6a3'); cg.addColorStop(.4,'#ffcc00');
-  cg.addColorStop(.8,'#d97b00'); cg.addColorStop(1,'#5c3300');
-  x.fillStyle=cg; x.beginPath(); x.arc(0,0,16,0,Math.PI*2); x.fill();
-  return new THREE.CanvasTexture(cv);
-}
-function makeLilyTex(){
-  const sz=256,cv=document.createElement('canvas');
-  cv.width=cv.height=sz;
-  const x=cv.getContext('2d');
-  x.translate(sz/2,sz/2);
-  x.beginPath(); x.arc(0,0,110,.4,Math.PI*2-.4); x.lineTo(0,0); x.closePath();
-  const g=x.createRadialGradient(0,0,0,0,0,110);
-  g.addColorStop(0,'#3a7c3a'); g.addColorStop(.7,'#245a24'); g.addColorStop(1,'#153d15');
+  ];
+
+  const baseHue = 108 + variant*12;
+  const g=x.createLinearGradient(0,-90,20,90);
+  g.addColorStop(0, `hsl(${baseHue+5},72%,46%)`);
+  g.addColorStop(0.4, `hsl(${baseHue},68%,37%)`);
+  g.addColorStop(0.8, `hsl(${baseHue-8},62%,28%)`);
+  g.addColorStop(1, `hsl(${baseHue-15},55%,20%)`);
+
+  shapes[variant%3]();
   x.fillStyle=g; x.fill();
-  x.strokeStyle='rgba(70,160,70,0.4)'; x.lineWidth=2;
-  for(let i=1;i<12;i++){
-    const a=(Math.PI*2/12)*i;
-    if(a>.3&&a<Math.PI*2-.3){
-      x.beginPath(); x.moveTo(0,0);
-      x.quadraticCurveTo(Math.cos(a+.2)*50,Math.sin(a+.2)*50,Math.cos(a)*100,Math.sin(a)*100);
-      x.stroke();
-    }
+
+  // Vein network
+  x.strokeStyle=`hsla(${baseHue+15},50%,65%,0.55)`;
+  x.lineWidth=1.5; x.lineCap='round';
+  // Central vein
+  x.beginPath(); x.moveTo(0,-88); x.lineTo(0,88); x.stroke();
+  // Side veins
+  x.lineWidth=1; x.strokeStyle=`hsla(${baseHue+15},45%,60%,0.35)`;
+  for(let i=-5;i<=5;i++){
+    const yy=i*14, spread=22+Math.abs(i)*2;
+    x.beginPath(); x.moveTo(0,yy);
+    x.quadraticCurveTo(spread*.6,yy-4, spread,yy+8); x.stroke();
+    x.beginPath(); x.moveTo(0,yy);
+    x.quadraticCurveTo(-spread*.6,yy-4,-spread,yy+8); x.stroke();
   }
-  return new THREE.CanvasTexture(cv);
-}
-function makeWaveTex(){
-  const sz=512,cv=document.createElement('canvas');
-  cv.width=cv.height=sz;
-  const ctx=cv.getContext('2d'),c=sz/2;
-  [{r:200,w:20,a:1},{r:150,w:15,a:.6},{r:100,w:10,a:.3}].forEach(({r,w,a})=>{
-    const g=ctx.createRadialGradient(c,c,r-w,c,c,r+w);
-    g.addColorStop(0,'rgba(255,255,255,0)');
-    g.addColorStop(.5,`rgba(255,255,255,${a})`);
-    g.addColorStop(1,'rgba(255,255,255,0)');
-    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(c,c,r+w,0,Math.PI*2); ctx.fill();
-  });
-  const s=ctx.createRadialGradient(c,c,0,c,c,50);
-  s.addColorStop(0,'rgba(255,255,255,0.9)'); s.addColorStop(1,'rgba(255,255,255,0)');
-  ctx.fillStyle=s; ctx.beginPath(); ctx.arc(c,c,50,0,Math.PI*2); ctx.fill();
+
+  // Surface texture — light spots
+  for(let i=0;i<12;i++){
+    x.fillStyle=`rgba(180,230,120,${Math.random()*0.12})`;
+    x.beginPath(); x.ellipse((Math.random()-.5)*50,(Math.random()-.5)*120,
+      Math.random()*8+3,Math.random()*5+2,Math.random()*Math.PI,0,Math.PI*2); x.fill();
+  }
   return new THREE.CanvasTexture(cv);
 }
 
-const leafTex=[makeLeafTex(115,60),makeLeafTex(130,50),makeLeafTex(95,70)];
-const autumnTex=[makeLeafTex(15,85,true),makeLeafTex(35,90,true),makeLeafTex(5,80,true)];
-const flowerTex=[makeFlowerTex(280),makeFlowerTex(320),makeFlowerTex(210),makeFlowerTex(0)];
-const lilyTex=makeLilyTex();
-const waveTex=makeWaveTex();
+// ── Autumn maple leaf (image 2 — deep red/orange) ──
+function makeAutumnLeafTex(variant){
+  const sz=256, cv=document.createElement('canvas');
+  cv.width=cv.height=sz;
+  const x=cv.getContext('2d');
+  x.translate(sz/2, sz/2);
+
+  // Hues: fiery red=5, orange=25, burnt orange=18, yellow=45
+  const hues=[[5,85],[18,90],[28,88],[42,80]];
+  const [hue,sat]=hues[variant%4];
+
+  // Maple leaf shape — 5-lobed
+  function drawMaple(scale=1){
+    x.beginPath();
+    const pts=[
+      [0,-95],[22,-65],[15,-62],[40,-48],[28,-40],[50,-18],
+      [38,-12],[42,5],[28,2],[22,30],[0,18],[-22,30],[-28,2],
+      [-42,5],[-50,-18],[-28,-40],[-40,-48],[-15,-62],[-22,-65],[0,-95]
+    ];
+    pts.forEach(([px,py],i)=>{
+      const sx=px*scale, sy=py*scale;
+      if(i===0) x.moveTo(sx,sy); else x.lineTo(sx,sy);
+    });
+    x.closePath();
+  }
+
+  // Shadow/base
+  drawMaple(1.02);
+  x.fillStyle=`hsl(${hue-5},${sat-10}%,18%)`; x.fill();
+
+  // Main fill with gradient
+  const g=x.createRadialGradient(-20,-40,5,10,20,110);
+  g.addColorStop(0,`hsl(${hue+18},${sat}%,72%)`);
+  g.addColorStop(0.3,`hsl(${hue+8},${sat}%,58%)`);
+  g.addColorStop(0.65,`hsl(${hue},${sat-5}%,42%)`);
+  g.addColorStop(1,`hsl(${hue-8},${sat-15}%,22%)`);
+  drawMaple();
+  x.fillStyle=g; x.fill();
+
+  // Veins
+  x.strokeStyle=`hsla(${hue-10},${sat-20}%,28%,0.7)`;
+  x.lineWidth=2; x.lineCap='round';
+  // Central
+  x.beginPath(); x.moveTo(0,18); x.lineTo(0,-92); x.stroke();
+  // Lobe veins
+  const lobeAngles=[-55,-28,0,28,55];
+  lobeAngles.forEach(ang=>{
+    const rad=ang*Math.PI/180;
+    x.beginPath(); x.moveTo(0,15);
+    x.quadraticCurveTo(Math.sin(rad)*35,Math.cos(rad)*-30,Math.sin(rad)*60,Math.cos(rad)*-65);
+    x.stroke();
+  });
+  x.lineWidth=1; x.strokeStyle=`hsla(${hue-5},40%,55%,0.35)`;
+  lobeAngles.forEach(ang=>{
+    const rad=ang*Math.PI/180;
+    for(let s=-1;s<=1;s+=2){
+      x.beginPath(); x.moveTo(Math.sin(rad)*20,Math.cos(rad)*-18);
+      x.quadraticCurveTo(Math.sin(rad)*30+s*15,Math.cos(rad)*-35,Math.sin(rad)*25+s*28,Math.cos(rad)*-55);
+      x.stroke();
+    }
+  });
+
+  // Aged spots/patina
+  for(let i=0;i<18;i++){
+    const px=(Math.random()-.5)*80, py=(Math.random()-.5)*130;
+    x.fillStyle=`hsla(${hue-20},60%,${10+Math.random()*15}%,${0.1+Math.random()*0.2})`;
+    x.beginPath(); x.ellipse(px,py,Math.random()*10+3,Math.random()*7+2,Math.random()*Math.PI,0,Math.PI*2); x.fill();
+  }
+  // Highlight
+  x.fillStyle=`hsla(${hue+25},80%,85%,0.15)`;
+  x.beginPath(); x.ellipse(-15,-30,25,18,Math.PI/5,0,Math.PI*2); x.fill();
+
+  return new THREE.CanvasTexture(cv);
+}
+
+// ── Pink saxifrage / tiny flower (image 3) ──
+function makeTinyFlowerTex(variant){
+  const sz=256, cv=document.createElement('canvas');
+  cv.width=cv.height=sz;
+  const x=cv.getContext('2d');
+  x.translate(sz/2, sz/2);
+
+  // Petal hues: soft pink=330, blush=345, pale pink=315, white-pink=350
+  const hues=[330,345,315,355];
+  const hue=hues[variant%4];
+
+  // Draw 5 petals
+  const nPetals=5;
+  for(let i=0;i<nPetals;i++){
+    x.save(); x.rotate((Math.PI*2/nPetals)*i + Math.PI/10);
+    const pg=x.createRadialGradient(0,-28,2,0,-28,52);
+    pg.addColorStop(0,`hsla(${hue+15},85%,95%,1)`);
+    pg.addColorStop(0.4,`hsla(${hue+5},78%,82%,1)`);
+    pg.addColorStop(0.8,`hsla(${hue},70%,68%,1)`);
+    pg.addColorStop(1,`hsla(${hue-10},65%,55%,1)`);
+    x.fillStyle=pg;
+    x.beginPath();
+    x.ellipse(0,-34, 22, 38, 0, 0, Math.PI*2);
+    x.fill();
+
+    // Petal vein
+    x.strokeStyle=`hsla(${hue-5},60%,55%,0.4)`;
+    x.lineWidth=1.5; x.lineCap='round';
+    x.beginPath(); x.moveTo(0,-8); x.quadraticCurveTo(3,-30,0,-65); x.stroke();
+    x.restore();
+  }
+
+  // Petal overlap shadow (inner ring)
+  for(let i=0;i<nPetals;i++){
+    x.save(); x.rotate((Math.PI*2/nPetals)*i + Math.PI/10);
+    x.fillStyle=`hsla(${hue-20},50%,35%,0.08)`;
+    x.beginPath(); x.ellipse(0,-10,12,12,0,0,Math.PI*2); x.fill();
+    x.restore();
+  }
+
+  // Center — yellow-green eye
+  const cg=x.createRadialGradient(0,0,0,0,0,14);
+  cg.addColorStop(0,'#e8f542');
+  cg.addColorStop(0.4,'#c2d620');
+  cg.addColorStop(0.75,'#8aaa10');
+  cg.addColorStop(1,'#5a7808');
+  x.fillStyle=cg; x.beginPath(); x.arc(0,0,14,0,Math.PI*2); x.fill();
+  // Center dots (stamens)
+  for(let i=0;i<8;i++){
+    const a=Math.random()*Math.PI*2, r=4+Math.random()*5;
+    x.fillStyle='rgba(255,230,0,0.9)';
+    x.beginPath(); x.arc(Math.cos(a)*r, Math.sin(a)*r, 1.5,0,Math.PI*2); x.fill();
+  }
+
+  return new THREE.CanvasTexture(cv);
+}
+
+// ── Green grass/stem texture for flowers mode ──
+function makeGrassStemTex(){
+  const sz=128, cv=document.createElement('canvas');
+  cv.width=sz; cv.height=sz*2;
+  const x=cv.getContext('2d');
+  x.translate(sz/2, sz*2);
+  // Thin blade
+  x.beginPath();
+  x.moveTo(0,0);
+  x.bezierCurveTo(rand(-8,8),-sz*.5, rand(-12,12),-sz*1.2, rand(-6,6),-sz*1.9);
+  const g=x.createLinearGradient(0,0,0,-sz*2);
+  g.addColorStop(0,'hsl(112,65%,22%)');
+  g.addColorStop(0.6,'hsl(118,70%,32%)');
+  g.addColorStop(1,'hsl(122,60%,40%)');
+  x.strokeStyle=g; x.lineWidth=rand(2,5); x.lineCap='round'; x.stroke();
+  return new THREE.CanvasTexture(cv);
+}
+
+// ── Realistic water texture (image 4 — deep blue with sparkles) ──
+function makeWaterRippleTex(){
+  const sz=512, cv=document.createElement('canvas');
+  cv.width=cv.height=sz;
+  const ctx=cv.getContext('2d');
+  const c=sz/2;
+
+  // Multiple expanding rings with varying opacity
+  const rings=[
+    {r:200,w:28,a:0.9},{r:155,w:20,a:0.65},{r:108,w:15,a:0.45},{r:68,w:10,a:0.25}
+  ];
+  rings.forEach(({r,w,a})=>{
+    const g=ctx.createRadialGradient(c,c,r-w,c,c,r+w);
+    g.addColorStop(0,'rgba(255,255,255,0)');
+    g.addColorStop(0.35,`rgba(200,230,255,${a*0.6})`);
+    g.addColorStop(0.5,`rgba(255,255,255,${a})`);
+    g.addColorStop(0.65,`rgba(200,230,255,${a*0.6})`);
+    g.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(c,c,r+w,0,Math.PI*2); ctx.fill();
+  });
+  // Bright impact center
+  const sg=ctx.createRadialGradient(c,c,0,c,c,45);
+  sg.addColorStop(0,'rgba(255,255,255,1)');
+  sg.addColorStop(0.4,'rgba(200,240,255,0.8)');
+  sg.addColorStop(1,'rgba(255,255,255,0)');
+  ctx.fillStyle=sg; ctx.beginPath(); ctx.arc(c,c,45,0,Math.PI*2); ctx.fill();
+  return new THREE.CanvasTexture(cv);
+}
+
+// ── Water surface texture — deep navy with light caustics ──
+function makeOceanSurfaceTex(){
+  const sz=512, cv=document.createElement('canvas');
+  cv.width=cv.height=sz;
+  const ctx=cv.getContext('2d');
+
+  // Deep ocean base
+  const bg=ctx.createLinearGradient(0,0,sz,sz);
+  bg.addColorStop(0,'#0d2540');
+  bg.addColorStop(0.4,'#0a1e35');
+  bg.addColorStop(0.7,'#122b48');
+  bg.addColorStop(1,'#0c2238');
+  ctx.fillStyle=bg; ctx.fillRect(0,0,sz,sz);
+
+  // Subtle wave ripple lines
+  for(let i=0;i<18;i++){
+    const y=Math.random()*sz;
+    const wg=ctx.createLinearGradient(0,y-6,0,y+6);
+    wg.addColorStop(0,'rgba(255,255,255,0)');
+    wg.addColorStop(0.5,`rgba(80,160,220,${0.05+Math.random()*0.08})`);
+    wg.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle=wg;
+    ctx.beginPath();
+    ctx.moveTo(0,y);
+    let cx=0;
+    while(cx<sz){
+      const wx=20+Math.random()*40;
+      ctx.bezierCurveTo(cx+wx*.3,y-4+Math.random()*8, cx+wx*.7,y-4+Math.random()*8, cx+wx,y+Math.random()*4-2);
+      cx+=wx;
+    }
+    ctx.lineTo(sz,y+8); ctx.lineTo(0,y+8); ctx.closePath();
+    ctx.fill();
+  }
+
+  // Sparkle highlights (sun on water)
+  for(let i=0;i<80;i++){
+    const sx=Math.random()*sz, sy=Math.random()*sz;
+    const brightness=0.3+Math.random()*0.7;
+    const size=Math.random()*3+0.5;
+    const sg=ctx.createRadialGradient(sx,sy,0,sx,sy,size*4);
+    sg.addColorStop(0,`rgba(255,255,255,${brightness})`);
+    sg.addColorStop(0.3,`rgba(180,220,255,${brightness*0.5})`);
+    sg.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle=sg; ctx.beginPath(); ctx.arc(sx,sy,size*4,0,Math.PI*2); ctx.fill();
+  }
+
+  // Cross-sparkle shape on brightest ones
+  for(let i=0;i<20;i++){
+    const sx=Math.random()*sz, sy=Math.random()*sz;
+    const len=4+Math.random()*8;
+    ctx.strokeStyle=`rgba(255,255,255,${0.4+Math.random()*0.5})`;
+    ctx.lineWidth=0.8;
+    ctx.beginPath(); ctx.moveTo(sx-len,sy); ctx.lineTo(sx+len,sy); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(sx,sy-len); ctx.lineTo(sx,sy+len); ctx.stroke();
+  }
+
+  return new THREE.CanvasTexture(cv);
+}
+
+// Build texture arrays
+const greenLeafTex=[0,1,2].map(makeGreenLeafTex);
+const autumnTex=[0,1,2,3].map(makeAutumnLeafTex);
+const flowerTex=[0,1,2,3].map(makeTinyFlowerTex);
+const waveTex=makeWaterRippleTex();
+const oceanTex=makeOceanSurfaceTex();
+
+// Ground cover textures for flowers mode
+function makeFlowerGroundTex(){
+  const sz=512, cv=document.createElement('canvas');
+  cv.width=cv.height=sz;
+  const ctx=cv.getContext('2d');
+  // Dark green base
+  ctx.fillStyle='#1a2e12'; ctx.fillRect(0,0,sz,sz);
+  // Scattered tiny green spots
+  for(let i=0;i<400;i++){
+    const gx=Math.random()*sz, gy=Math.random()*sz;
+    ctx.fillStyle=`hsla(${110+Math.random()*20},55%,${18+Math.random()*15}%,0.8)`;
+    ctx.beginPath(); ctx.ellipse(gx,gy,Math.random()*4+1,Math.random()*6+2,Math.random()*Math.PI,0,Math.PI*2); ctx.fill();
+  }
+  return new THREE.CanvasTexture(cv);
+}
+const flowerGroundTex=makeFlowerGroundTex();
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  FLOOR ENVIRONMENT
@@ -383,58 +625,135 @@ function buildFloor(){
   if(envGroup){scene.remove(envGroup); envGroup=null;}
   envGroup=new THREE.Group(); envGroup.position.y=floorY; scene.add(envGroup);
   const R=15, dummy=new THREE.Object3D();
-  if(mode==='leaves'||mode==='autumn'){
-    const tArr=mode==='leaves'?leafTex:autumnTex;
-    tArr.forEach(tex=>{
-      const inst=new THREE.InstancedMesh(new THREE.PlaneGeometry(.18,.25),
-        new THREE.MeshStandardMaterial({map:tex,alphaTest:.4,side:THREE.DoubleSide,roughness:.8}),3500);
+
+  if(mode==='leaves'){
+    // Green grass base
+    const grassBase=new THREE.Mesh(
+      new THREE.PlaneGeometry(35,35).rotateX(-Math.PI/2),
+      new THREE.MeshStandardMaterial({color:0x1e3d12,roughness:.95})
+    );
+    grassBase.position.y=-.003; grassBase.receiveShadow=true; envGroup.add(grassBase);
+
+    // Dense green leaf coverage — like image 1
+    greenLeafTex.forEach((tex,ti)=>{
+      const inst=new THREE.InstancedMesh(
+        new THREE.PlaneGeometry(.14+ti*.02,.20+ti*.02),
+        new THREE.MeshStandardMaterial({map:tex,alphaTest:.35,side:THREE.DoubleSide,roughness:.85}),
+        2000
+      );
       inst.castShadow=true; inst.receiveShadow=true;
-      for(let i=0;i<3500;i++){
-        const r=Math.sqrt(Math.random())*R,th=Math.random()*Math.PI*2;
-        dummy.position.set(Math.cos(th)*r,.001+Math.random()*.02,Math.sin(th)*r);
-        dummy.rotation.set(-Math.PI/2+rand(-.1,.1),0,rand(0,Math.PI*2));
+      for(let i=0;i<2000;i++){
+        const r=Math.sqrt(Math.random())*R, th=Math.random()*Math.PI*2;
+        dummy.position.set(Math.cos(th)*r, .001+Math.random()*.015, Math.sin(th)*r);
+        // Mostly flat on ground with slight variation
+        dummy.rotation.set(-Math.PI/2+rand(-.12,.12), 0, rand(0,Math.PI*2));
+        dummy.scale.setScalar(rand(.7,1.4)); dummy.updateMatrix(); inst.setMatrixAt(i,dummy.matrix);
+      }
+      envGroup.add(inst);
+    });
+
+  } else if(mode==='autumn'){
+    // Dark forest floor base
+    const floorBase=new THREE.Mesh(
+      new THREE.PlaneGeometry(35,35).rotateX(-Math.PI/2),
+      new THREE.MeshStandardMaterial({color:0x1a0d08,roughness:.98})
+    );
+    floorBase.position.y=-.003; floorBase.receiveShadow=true; envGroup.add(floorBase);
+
+    // Dense autumn maple leaves — like image 2
+    autumnTex.forEach((tex,ti)=>{
+      const count=ti<2?2000:1500;
+      const inst=new THREE.InstancedMesh(
+        new THREE.PlaneGeometry(.16+ti*.015,.18+ti*.015),
+        new THREE.MeshStandardMaterial({map:tex,alphaTest:.3,side:THREE.DoubleSide,roughness:.8,
+          // Slight emissive warmth
+          emissive:new THREE.Color(0.05,0.01,0),emissiveIntensity:.15
+        }),
+        count
+      );
+      inst.castShadow=true; inst.receiveShadow=true;
+      for(let i=0;i<count;i++){
+        const r=Math.sqrt(Math.random())*R, th=Math.random()*Math.PI*2;
+        dummy.position.set(Math.cos(th)*r, .001+Math.random()*.02, Math.sin(th)*r);
+        // Flat but some curled
+        const curl=rand(-.15,.15);
+        dummy.rotation.set(-Math.PI/2+curl, rand(0,Math.PI*2), rand(0,Math.PI*2));
+        dummy.scale.setScalar(rand(.75,1.5)); dummy.updateMatrix(); inst.setMatrixAt(i,dummy.matrix);
+      }
+      envGroup.add(inst);
+    });
+
+  } else if(mode==='flowers'){
+    // Dark green base
+    const floorBase=new THREE.Mesh(
+      new THREE.PlaneGeometry(35,35).rotateX(-Math.PI/2),
+      new THREE.MeshStandardMaterial({map:flowerGroundTex,roughness:.95})
+    );
+    floorBase.position.y=-.003; floorBase.receiveShadow=true; envGroup.add(floorBase);
+
+    // Densely packed tiny pink flowers — like image 3
+    flowerTex.forEach((tex,ti)=>{
+      const inst=new THREE.InstancedMesh(
+        new THREE.PlaneGeometry(.09,.09),
+        new THREE.MeshStandardMaterial({map:tex,alphaTest:.38,side:THREE.DoubleSide,roughness:.9}),
+        1800
+      );
+      inst.castShadow=true; inst.receiveShadow=true;
+      for(let i=0;i<1800;i++){
+        const r=Math.sqrt(Math.random())*R, th=Math.random()*Math.PI*2;
+        dummy.position.set(Math.cos(th)*r, .004+Math.random()*.025, Math.sin(th)*r);
+        // Flowers face mostly upward with slight tilt
+        dummy.rotation.set(-Math.PI/2+rand(-.08,.08), 0, rand(0,Math.PI*2));
         dummy.scale.setScalar(rand(.8,1.4)); dummy.updateMatrix(); inst.setMatrixAt(i,dummy.matrix);
       }
       envGroup.add(inst);
     });
-  } else if(mode==='flowers'){
-    flowerTex.forEach(tex=>{
-      const inst=new THREE.InstancedMesh(new THREE.PlaneGeometry(.2,.2),
-        new THREE.MeshStandardMaterial({map:tex,alphaTest:.4,side:THREE.DoubleSide,roughness:.9}),1200);
-      inst.castShadow=true; inst.receiveShadow=true;
-      for(let i=0;i<1200;i++){
-        const r=Math.sqrt(Math.random())*R,th=Math.random()*Math.PI*2;
-        dummy.position.set(Math.cos(th)*r,.008+Math.random()*.02,Math.sin(th)*r);
-        dummy.rotation.set(-Math.PI/2+rand(-.1,.1),0,rand(0,Math.PI*2));
-        dummy.scale.setScalar(rand(.7,1.3)); dummy.updateMatrix(); inst.setMatrixAt(i,dummy.matrix);
-      }
-      envGroup.add(inst);
-    });
-    const li=new THREE.InstancedMesh(new THREE.PlaneGeometry(.2,.3),
-      new THREE.MeshStandardMaterial({map:leafTex[0],alphaTest:.4,side:THREE.DoubleSide,roughness:.8}),5000);
-    li.receiveShadow=true;
-    for(let i=0;i<5000;i++){
-      const r=Math.sqrt(Math.random())*R,th=Math.random()*Math.PI*2;
-      dummy.position.set(Math.cos(th)*r,.001+Math.random()*.005,Math.sin(th)*r);
-      dummy.rotation.set(-Math.PI/2,0,rand(0,Math.PI*2));
-      dummy.scale.setScalar(rand(.8,1.3)); dummy.updateMatrix(); li.setMatrixAt(i,dummy.matrix);
+
+    // Green stem/leaves underneath
+    const greenInst=new THREE.InstancedMesh(
+      new THREE.PlaneGeometry(.07,.14),
+      new THREE.MeshStandardMaterial({map:greenLeafTex[2],alphaTest:.3,side:THREE.DoubleSide,roughness:.9}),
+      3000
+    );
+    greenInst.receiveShadow=true;
+    for(let i=0;i<3000;i++){
+      const r=Math.sqrt(Math.random())*R, th=Math.random()*Math.PI*2;
+      dummy.position.set(Math.cos(th)*r, .001, Math.sin(th)*r);
+      dummy.rotation.set(-Math.PI/2, 0, rand(0,Math.PI*2));
+      dummy.scale.setScalar(rand(.6,1.1)); dummy.updateMatrix(); greenInst.setMatrixAt(i,dummy.matrix);
     }
-    envGroup.add(li);
+    envGroup.add(greenInst);
+
   } else if(mode==='water'){
-    const pool=new THREE.Mesh(new THREE.PlaneGeometry(35,35).rotateX(-Math.PI/2),
-      new THREE.MeshStandardMaterial({color:0x00aaff,emissive:0x002255,transparent:true,
-        opacity:.75,roughness:.02,metalness:.95,depthWrite:false}));
+    // Ocean surface base — deep blue like image 4
+    const pool=new THREE.Mesh(
+      new THREE.PlaneGeometry(35,35).rotateX(-Math.PI/2),
+      new THREE.MeshStandardMaterial({
+        map:oceanTex,
+        color:0x1a4a7a,
+        emissive:0x051525,
+        emissiveIntensity:.4,
+        transparent:true,
+        opacity:.92,
+        roughness:.04,
+        metalness:.88,
+        depthWrite:false
+      })
+    );
     pool.position.y=.002; pool.receiveShadow=true; envGroup.add(pool);
-    const lp=new THREE.InstancedMesh(new THREE.PlaneGeometry(.3,.3),
-      new THREE.MeshStandardMaterial({map:lilyTex,alphaTest:.4,side:THREE.DoubleSide,roughness:.8}),400);
-    lp.castShadow=true; lp.receiveShadow=true;
-    for(let i=0;i<400;i++){
-      const r=Math.sqrt(Math.random())*R,th=Math.random()*Math.PI*2;
-      dummy.position.set(Math.cos(th)*r,.004+Math.random()*.002,Math.sin(th)*r);
-      dummy.rotation.set(-Math.PI/2,0,rand(0,Math.PI*2));
-      dummy.scale.setScalar(rand(.6,1.5)); dummy.updateMatrix(); lp.setMatrixAt(i,dummy.matrix);
-    }
-    envGroup.add(lp);
+
+    // Subtle surface sparkle overlay
+    const sparkleMesh=new THREE.Mesh(
+      new THREE.PlaneGeometry(35,35).rotateX(-Math.PI/2),
+      new THREE.MeshBasicMaterial({
+        color:0x88bbee,
+        transparent:true,
+        opacity:.06,
+        blending:THREE.AdditiveBlending,
+        depthWrite:false
+      })
+    );
+    sparkleMesh.position.y=.004; envGroup.add(sparkleMesh);
   }
 }
 
@@ -443,9 +762,9 @@ function buildFloor(){
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 function spawnLeaf(px,pz,tArr){
   const tex=tArr[Math.floor(Math.random()*tArr.length)];
-  const s=rand(.08,.15);
-  const mesh=new THREE.Mesh(new THREE.PlaneGeometry(s,s*1.5),
-    new THREE.MeshStandardMaterial({map:tex,alphaTest:.4,side:THREE.DoubleSide,roughness:.7}));
+  const s=rand(.07,.14);
+  const mesh=new THREE.Mesh(new THREE.PlaneGeometry(s,s*1.4),
+    new THREE.MeshStandardMaterial({map:tex,alphaTest:.35,side:THREE.DoubleSide,roughness:.8}));
   mesh.castShadow=true;
   mesh.rotation.x=-Math.PI/2+rand(-.2,.2); mesh.rotation.z=rand(0,Math.PI*2);
   mesh.position.set(px+rand(-.1,.1),floorY+.18+rand(0,.25),pz+rand(-.1,.1));
@@ -457,49 +776,50 @@ function spawnLeaf(px,pz,tArr){
 }
 function spawnFlower(px,pz){
   const tex=flowerTex[Math.floor(Math.random()*flowerTex.length)];
-  const s=rand(.08,.14);
+  const s=rand(.06,.10);
   const mesh=new THREE.Mesh(new THREE.PlaneGeometry(s,s),
-    new THREE.MeshStandardMaterial({map:tex,alphaTest:.4,side:THREE.DoubleSide,roughness:.9}));
+    new THREE.MeshStandardMaterial({map:tex,alphaTest:.35,side:THREE.DoubleSide,roughness:.9}));
   mesh.castShadow=true;
-  mesh.rotation.x=-Math.PI/2+rand(-.2,.2); mesh.rotation.z=rand(0,Math.PI*2);
-  mesh.position.set(px+rand(-.15,.15),floorY+.2+rand(0,.2),pz+rand(-.15,.15));
-  mesh.userData={vx:rand(-.02,.02)+bodyVel.x*.5,vy:rand(.008,.02),
-    vz:rand(-.02,.02)+bodyVel.z*.5,gravity:.0012,
-    floorY:floorY+.006,spinX:rand(-.04,.04),spinZ:rand(-.08,.08),
-    life:1,decay:rand(.003,.008),type:'flower'};
+  mesh.rotation.x=-Math.PI/2+rand(-.15,.15); mesh.rotation.z=rand(0,Math.PI*2);
+  mesh.position.set(px+rand(-.15,.15),floorY+.18+rand(0,.18),pz+rand(-.15,.15));
+  mesh.userData={vx:rand(-.018,.018)+bodyVel.x*.5,vy:rand(.006,.018),
+    vz:rand(-.018,.018)+bodyVel.z*.5,gravity:.001,
+    floorY:floorY+.006,spinX:rand(-.03,.03),spinZ:rand(-.07,.07),
+    life:1,decay:rand(.003,.007),type:'flower'};
   scene.add(mesh); particles.push(mesh);
 }
 function spawnWave(px,pz){
   const wave=new THREE.Mesh(new THREE.PlaneGeometry(.5,.5),
-    new THREE.MeshBasicMaterial({map:waveTex,color:0x88ccff,transparent:true,opacity:.9,
+    new THREE.MeshBasicMaterial({map:waveTex,color:0xaaddff,transparent:true,opacity:.95,
       side:THREE.DoubleSide,depthWrite:false,blending:THREE.AdditiveBlending}));
   wave.rotation.x=-Math.PI/2; wave.position.set(px,floorY+.006,pz);
-  wave.userData={scaleSpd:.02,life:1,decay:.015,type:'wave'};
+  wave.userData={scaleSpd:.02,life:1,decay:.012,type:'wave'};
   scene.add(wave); particles.push(wave);
-  for(let i=0;i<10;i++){
-    const a=rand(0,Math.PI*2),spd=rand(.02,.06);
-    const drop=new THREE.Mesh(new THREE.SphereGeometry(rand(.004,.01),8,8),
-      new THREE.MeshStandardMaterial({color:0xffffff,roughness:0,metalness:1,transparent:true,opacity:.9}));
+  // Water droplets — more realistic
+  for(let i=0;i<12;i++){
+    const a=rand(0,Math.PI*2), spd=rand(.015,.055);
+    const drop=new THREE.Mesh(new THREE.SphereGeometry(rand(.003,.009),8,8),
+      new THREE.MeshStandardMaterial({color:0xc8e8ff,roughness:.02,metalness:.9,transparent:true,opacity:.85}));
     drop.castShadow=true; drop.position.set(px,floorY+.01,pz);
-    drop.userData={vx:Math.cos(a)*spd+bodyVel.x*.2,vy:rand(.04,.1),
-      vz:Math.sin(a)*spd+bodyVel.z*.2,gravity:.005,
-      life:1,decay:rand(.015,.03),type:'drop',floorY:floorY};
+    drop.userData={vx:Math.cos(a)*spd+bodyVel.x*.2,vy:rand(.03,.09),
+      vz:Math.sin(a)*spd+bodyVel.z*.2,gravity:.004,
+      life:1,decay:rand(.012,.025),type:'drop',floorY:floorY};
     scene.add(drop); particles.push(drop);
   }
 }
 function burst(px,py,pz){
-  if(mode==='leaves')      for(let i=0;i<8;i++) spawnLeaf(px,pz,leafTex);
+  if(mode==='leaves')      for(let i=0;i<8;i++) spawnLeaf(px,pz,greenLeafTex);
   else if(mode==='water')  spawnWave(px,pz);
-  else if(mode==='flowers'){for(let i=0;i<5;i++) spawnFlower(px,pz); for(let i=0;i<3;i++) spawnLeaf(px,pz,leafTex);}
-  else if(mode==='autumn') for(let i=0;i<10;i++) spawnLeaf(px,pz,autumnTex);
+  else if(mode==='flowers'){for(let i=0;i<7;i++) spawnFlower(px,pz); for(let i=0;i<3;i++) spawnLeaf(px,pz,greenLeafTex);}
+  else if(mode==='autumn') for(let i=0;i<9;i++) spawnLeaf(px,pz,autumnTex);
 }
 function updateParticles(){
   const t=Date.now()*.001;
   for(let i=particles.length-1;i>=0;i--){
     const p=particles[i],d=p.userData;
     if(d.type==='wave'){
-      d.scaleSpd*=1.05; p.scale.setScalar(p.scale.x+d.scaleSpd);
-      p.material.opacity=d.life*.9;
+      d.scaleSpd*=1.055; p.scale.setScalar(p.scale.x+d.scaleSpd);
+      p.material.opacity=d.life*.92;
     } else if(d.type==='drop'){
       d.vy-=d.gravity;
       p.position.x+=d.vx; p.position.y+=d.vy; p.position.z+=d.vz;
@@ -536,19 +856,15 @@ const SKEL_CONN=[
   [24,26],[26,28],[28,30],[28,32]
 ];
 
-
-// ── Camera facing mode (front/back) ──
 let facingMode = 'user';
 let currentStream = null;
 
 function switchCamera(){
   facingMode = facingMode === 'user' ? 'environment' : 'user';
-  // Stop current stream
   if(currentStream) currentStream.getTracks().forEach(t => t.stop());
   videoEl.srcObject = null;
   document.getElementById('tracker-dot').classList.remove('on');
   document.getElementById('move-status').textContent = 'Switching...';
-  // Restart with new facing mode
   navigator.mediaDevices.getUserMedia({
     video:{facingMode:{ideal:facingMode}, width:{ideal:320}, height:{ideal:240}}
   }).then(stream => {
@@ -560,31 +876,20 @@ function switchCamera(){
   });
 }
 
-// ── STEP 1: Request camera permission explicitly ──
 async function requestCameraPermission(){
-  // Check if API exists
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
     return {ok:false, reason:'api_missing'};
   }
-
-  // Check existing permission state (Chrome/Edge)
   if(navigator.permissions){
     try{
       const status = await navigator.permissions.query({name:'camera'});
       if(status.state==='denied') return {ok:false, reason:'denied'};
-    } catch(e){/* Firefox doesn't support camera query */}
+    } catch(e){}
   }
-
-  // Actually request the camera
   try{
-    const constraints = {
-      video:{
-        facingMode:{ideal:'user'},
-        width:{ideal:320},
-        height:{ideal:240}
-      }
-    };
-    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:{ideal:'user'},width:{ideal:320},height:{ideal:240}}
+    });
     return {ok:true, stream};
   } catch(err){
     if(err.name==='NotAllowedError'||err.name==='PermissionDeniedError')
@@ -602,10 +907,9 @@ function showPermError(reason){
   const p = errDiv.querySelector('p');
   const ol = errDiv.querySelector('ol');
   errDiv.style.display='flex';
-
   if(reason==='api_missing'){
     errDiv.querySelector('h2').textContent='Not Supported';
-    p.textContent='Camera API not available. Please open this page via a local server (localhost) or HTTPS, not as a file:// URL.';
+    p.textContent='Camera API not available. Please open this page via a local server (localhost) or HTTPS.';
     ol.innerHTML='<li>Install VS Code + Live Server extension</li><li>Right-click the HTML file → "Open with Live Server"</li><li>Or run: npx serve . in terminal</li>';
   } else if(reason==='denied'){
     ol.innerHTML='<li>Click the 🔒 icon in the address bar</li><li>Set Camera → <b>Allow</b></li><li>Reload the page</li>';
@@ -624,12 +928,11 @@ function startCameraFeed(stream){
   videoEl.srcObject=stream;
   camAllowed=true;
   placeholder.querySelector('.nc-text').textContent='Loading AI...';
-
   videoEl.onloadedmetadata=()=>{
     videoEl.play();
     skelCv.width=videoEl.videoWidth||320;
     skelCv.height=videoEl.videoHeight||240;
-    placeholder.style.display='none'; // hide placeholder, show video
+    placeholder.style.display='none';
     startPose();
   };
 }
@@ -640,7 +943,6 @@ function startPose(){
     document.getElementById('cam-status').textContent='no model';
     return;
   }
-
   const pose=new Pose({
     locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}`
   });
@@ -653,7 +955,6 @@ function startPose(){
   });
   pose.onResults(onPoseResult);
   document.getElementById('move-status').textContent='Starting...';
-
   ;(async function loop(){
     if(videoEl.readyState>=2){
       try{ await pose.send({image:videoEl}); }
@@ -677,13 +978,10 @@ function onPoseResult(res){
     document.getElementById('move-status').textContent='No person';
     return;
   }
-
   personDetected=true;
   document.getElementById('tracker-dot').classList.add('on');
   const lm=res.poseLandmarks;
   const W=skelCv.width,H=skelCv.height;
-
-  // Draw bones
   SKEL_CONN.forEach(([a,b])=>{
     if(lm[a].visibility<.4||lm[b].visibility<.4) return;
     const isLeg=a>=23||b>=23;
@@ -694,8 +992,6 @@ function onPoseResult(res){
     skelCtx.lineTo((1-lm[b].x)*W,lm[b].y*H);
     skelCtx.stroke();
   });
-
-  // Draw joints
   lm.forEach((l,i)=>{
     if(l.visibility<.4) return;
     const key=[11,12,15,16,23,24,27,28].includes(i);
@@ -704,8 +1000,6 @@ function onPoseResult(res){
     skelCtx.fillStyle=key?'#50dc78':'rgba(255,255,255,0.7)';
     skelCtx.fill();
   });
-
-  // Compute body world position
   const lh=lm[23],rh=lm[24];
   if(lh&&rh&&lh.visibility>.4&&rh.visibility>.4){
     const hx=((lh.x+rh.x)/2);
@@ -714,15 +1008,11 @@ function onPoseResult(res){
     bodyPos={x:(hx-.5)*-6,z:(hz-.3)*4};
     bodyVel={x:(bodyPos.x-prevBodyPos.x)*.35,z:(bodyPos.z-prevBodyPos.z)*.35};
     moveSpeed=Math.sqrt(bodyVel.x**2+bodyVel.z**2);
-
-    // Status
     let s='Still';
     if(moveSpeed>.006) s='Moving';
     if(moveSpeed>.015) s='Walking ↗';
     if(moveSpeed>.03)  s='Running! 🏃';
     document.getElementById('move-status').textContent=s;
-
-    // Direction arrow
     const arr=document.getElementById('dir-arrow');
     if(moveSpeed>.008){
       arr.style.opacity='1';
@@ -792,12 +1082,10 @@ function xrLoop(time,frame){
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 function setDemoCamera(){
   if(viewMode==='angled'){
-    // Standing person looking down at floor in front
     camera.position.set(0, 2.2, 1.8);
     camera.lookAt(0, 0, -1.5);
     document.getElementById('view-btn').textContent='📷 ANGLED';
   } else {
-    // Ceiling projector view — straight down
     camera.position.set(0, 7, 0.001);
     camera.lookAt(0, 0, 0);
     document.getElementById('view-btn').textContent='🔭 TOP-DOWN';
@@ -831,23 +1119,13 @@ function startDemo(){
   let lastBB=0, lastAuto=0;
   renderer.setAnimationLoop(t=>{
     updateParticles();
-
     if(personDetected && moveSpeed>.006 && t-lastBB>100){
-      // Body detected — spawn at their feet position
-      // Clamp to visible floor area (-4 to 4 range)
-      const bx = Math.max(-4, Math.min(4, bodyPos.x));
-      const bz = Math.max(-4, Math.min(4, bodyPos.z));
-      burst(bx, 0, bz);
-      lastBB = t;
-    } else if(t - lastAuto > 300){
-      // No body / not moving — auto spawn at random floor positions
-      // so environment is always alive and visible
-      const ax = rand(-3, 3);
-      const az = rand(-3, 3);
-      burst(ax, 0, az);
-      lastAuto = t;
+      const bx=Math.max(-4,Math.min(4,bodyPos.x));
+      const bz=Math.max(-4,Math.min(4,bodyPos.z));
+      burst(bx,0,bz); lastBB=t;
+    } else if(t-lastAuto>300){
+      burst(rand(-3,3),0,rand(-3,3)); lastAuto=t;
     }
-
     dirLight.position.set(camera.position.x+3,8,camera.position.z+4);
     dirLight.target.position.set(0,0,0); dirLight.target.updateMatrixWorld();
     renderer.render(scene,camera);
@@ -871,20 +1149,15 @@ function showMainUI(){
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  MAIN ENTRY — "Allow & Start" button
+//  EVENTS
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 document.getElementById('ar-btn').addEventListener('click', async ()=>{
   document.getElementById('ar-btn').textContent='Requesting camera...';
   document.getElementById('ar-btn').disabled=true;
-
-  // Ask for camera permission
   const result = await requestCameraPermission();
   if(result.ok) currentStream = result.stream;
-
   if(result.ok){
-    // Permission granted — start camera feed
     startCameraFeed(result.stream);
-    // Then start 3D
     if(navigator.xr) tryStartAR();
     else startDemo();
   } else if(result.reason==='api_missing'){
@@ -892,27 +1165,22 @@ document.getElementById('ar-btn').addEventListener('click', async ()=>{
   } else if(result.reason==='denied'){
     showPermError('denied');
   } else if(result.reason==='no_device'){
-    // No camera but can still run without tracking
     showPermError('no_device');
   } else {
     showPermError('unknown');
   }
 });
 
-// Retry button
 document.getElementById('retry-btn').addEventListener('click',()=>{
   document.getElementById('perm-error').style.display='none';
   document.getElementById('ar-btn').textContent='Allow & Start';
   document.getElementById('ar-btn').disabled=false;
 });
-
-// Skip camera button
 document.getElementById('skip-btn').addEventListener('click',()=>{
   document.getElementById('perm-error').style.display='none';
   startDemo();
 });
 
-// Mode buttons
 document.querySelectorAll('.mbt').forEach(b=>{
   b.addEventListener('click',()=>{
     document.querySelectorAll('.mbt').forEach(x=>x.classList.remove('on'));
