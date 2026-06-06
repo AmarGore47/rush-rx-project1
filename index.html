@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
+<title>Floor Projection XR</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#000;overflow:hidden;font-family:'Segoe UI',sans-serif;}
+canvas#c{display:block;width:100vw;height:100vh;}
+
+/* START SCREEN */
+#start-screen{
+  position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;pointer-events:all;
+  background:radial-gradient(ellipse at 50% 80%,#0f1f15,#000 70%);z-index:20;
+}
+.logo-ring{width:110px;height:110px;border-radius:50%;border:1px solid rgba(80,220,120,0.3);
+  display:flex;align-items:center;justify-content:center;margin-bottom:28px;position:relative;}
+.logo-ring::before{content:'';position:absolute;inset:-10px;border-radius:50%;
+  border:1px solid rgba(80,220,120,0.1);animation:pulse-ring 3s infinite;}
+@keyframes pulse-ring{0%{transform:scale(1);opacity:1}100%{transform:scale(1.15);opacity:0}}
+.logo-inner{width:66px;height:66px;border-radius:50%;background:rgba(80,220,120,0.07);
+  border:1px solid rgba(80,220,120,0.4);display:flex;align-items:center;justify-content:center;}
+#start-screen h1{font-size:clamp(20px,5vw,32px);font-weight:200;letter-spacing:0.3em;
+  color:#fff;text-align:center;margin-bottom:8px;text-transform:uppercase;}
+#start-screen .sub{font-size:11px;color:rgba(255,255,255,0.4);letter-spacing:0.15em;
+  text-align:center;margin-bottom:36px;text-transform:uppercase;}
+
+/* PERMISSION CARD */
+#perm-card{
+  background:rgba(255,255,255,0.04);border:1px solid rgba(80,220,120,0.2);
+  border-radius:16px;padding:20px 24px;margin-bottom:24px;max-width:300px;width:90%;
+  text-align:center;
+}
+#perm-card .perm-title{font-size:12px;color:rgba(255,255,255,0.5);
+  letter-spacing:0.12em;text-transform:uppercase;margin-bottom:12px;}
+#perm-card .perm-items{display:flex;flex-direction:column;gap:8px;}
+.perm-item{display:flex;align-items:center;gap:10px;padding:8px 12px;
+  background:rgba(255,255,255,0.03);border-radius:8px;border:1px solid rgba(255,255,255,0.06);}
+.perm-icon{font-size:18px;width:28px;text-align:center;}
+.perm-text{font-size:12px;color:rgba(255,255,255,0.6);text-align:left;line-height:1.4;}
+.perm-text strong{color:rgba(255,255,255,0.9);display:block;font-size:11px;}
+
+#ar-btn{padding:14px 44px;border-radius:50px;border:1px solid rgba(80,220,120,0.6);
+  background:rgba(80,220,120,0.12);color:#64f08c;font-size:12px;font-weight:600;
+  letter-spacing:0.2em;text-transform:uppercase;cursor:pointer;transition:all 0.3s;
+  box-shadow:0 0 24px rgba(80,220,120,0.15);}
+#ar-btn:hover,#ar-btn:active{background:rgba(80,220,120,0.22);transform:translateY(-1px);}
+
+/* PERMISSION ERROR OVERLAY */
+#perm-error{
+  display:none;position:absolute;inset:0;background:rgba(0,0,0,0.92);
+  z-index:30;align-items:center;justify-content:center;flex-direction:column;gap:16px;padding:32px;
+}
+#perm-error .err-icon{font-size:48px;}
+#perm-error h2{font-size:18px;color:#fff;font-weight:300;letter-spacing:0.1em;text-align:center;}
+#perm-error p{font-size:13px;color:rgba(255,255,255,0.55);text-align:center;line-height:1.7;max-width:300px;}
+#perm-error .fix-steps{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);
+  border-radius:12px;padding:16px 20px;max-width:320px;width:100%;}
+#perm-error .fix-steps p{color:rgba(255,200,100,0.9);font-size:12px;letter-spacing:0.05em;margin-bottom:6px;}
+#perm-error .fix-steps ol{color:rgba(255,255,255,0.6);font-size:12px;line-height:2;padding-left:18px;}
+#retry-btn{padding:12px 32px;border-radius:30px;border:1px solid rgba(80,220,120,0.4);
+  background:rgba(80,220,120,0.08);color:#64f08c;font-size:12px;letter-spacing:0.15em;
+  cursor:pointer;margin-top:8px;}
+#skip-btn{font-size:11px;color:rgba(255,255,255,0.3);cursor:pointer;
+  background:none;border:none;letter-spacing:0.1em;text-decoration:underline;}
+
+/* HUD */
+#hud{position:absolute;top:20px;left:50%;transform:translateX(-50%);display:none;
+  align-items:center;gap:8px;background:rgba(10,15,10,0.8);
+  border:1px solid rgba(255,255,255,0.1);border-radius:24px;padding:8px 20px;
+  backdrop-filter:blur(12px);z-index:15;white-space:nowrap;}
+#hud-dot{width:8px;height:8px;border-radius:50%;background:#555;transition:background 0.5s;}
+#hud-dot.on{background:#50dc78;animation:blink 1.5s infinite;}
+@keyframes blink{0%,100%{opacity:1;box-shadow:0 0 6px #50dc78}50%{opacity:0.4;box-shadow:none}}
+#hud-text{font-size:11px;color:rgba(255,255,255,0.7);letter-spacing:0.12em;text-transform:uppercase;}
+
+/* MODE BAR */
+#mode-bar{position:absolute;bottom:36px;left:50%;transform:translateX(-50%);
+  display:none;gap:6px;pointer-events:all;background:rgba(0,0,0,0.5);
+  padding:7px;border-radius:28px;backdrop-filter:blur(10px);
+  border:1px solid rgba(255,255,255,0.06);z-index:15;flex-wrap:wrap;justify-content:center;
+  max-width:95vw;}
+.mbt{padding:9px 16px;border-radius:18px;border:1px solid transparent;
+  background:transparent;color:rgba(255,255,255,0.45);font-size:11px;font-weight:600;
+  letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;transition:all 0.25s;}
+.mbt.on{color:#fff;border-color:rgba(255,255,255,0.25);background:rgba(255,255,255,0.12);}
+
+/* VIEW TOGGLE */
+#view-btn{position:absolute;top:20px;left:16px;display:none;padding:8px 14px;
+  border-radius:16px;border:1px solid rgba(255,255,255,0.12);background:rgba(0,0,0,0.6);
+  color:rgba(255,255,255,0.55);font-size:10px;font-weight:600;letter-spacing:0.1em;
+  cursor:pointer;pointer-events:all;backdrop-filter:blur(8px);z-index:15;transition:all 0.2s;}
+
+/* TRACKER PANEL */
+#tracker-panel{
+  position:absolute;bottom:120px;right:14px;width:160px;
+  display:none;flex-direction:column;z-index:20;pointer-events:none;
+}
+@media(min-width:500px){#tracker-panel{width:190px;}}
+#tracker-header{background:rgba(0,0,0,0.88);border:1px solid rgba(80,220,120,0.3);
+  border-bottom:none;border-radius:12px 12px 0 0;padding:6px 10px;
+  display:flex;align-items:center;gap:6px;}
+#tracker-dot{width:6px;height:6px;border-radius:50%;background:#444;transition:background 0.4s;}
+#tracker-dot.on{background:#50dc78;animation:blink 1.5s infinite;}
+#tracker-label{font-size:10px;letter-spacing:0.1em;color:rgba(255,255,255,0.55);text-transform:uppercase;}
+#cam-status{margin-left:auto;font-size:9px;color:rgba(255,255,255,0.3);}
+#tracker-body{position:relative;width:100%;aspect-ratio:4/3;
+  background:#000;border:1px solid rgba(80,220,120,0.2);border-top:none;overflow:hidden;}
+#cam-video{position:absolute;inset:0;width:100%;height:100%;
+  object-fit:cover;transform:scaleX(-1);opacity:0.4;}
+#skel-canvas{position:absolute;inset:0;width:100%;height:100%;}
+/* No-camera placeholder */
+#no-cam-placeholder{position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:6px;background:rgba(0,0,0,0.9);}
+#no-cam-placeholder .nc-icon{font-size:24px;opacity:0.3;}
+#no-cam-placeholder .nc-text{font-size:9px;color:rgba(255,255,255,0.25);
+  text-align:center;letter-spacing:0.05em;max-width:80%;}
+#tracker-footer{background:rgba(0,0,0,0.88);border:1px solid rgba(80,220,120,0.2);
+  border-top:none;border-radius:0 0 12px 12px;padding:5px 10px;
+  display:flex;align-items:center;justify-content:space-between;}
+#move-status{font-size:10px;color:rgba(80,220,120,0.8);letter-spacing:0.06em;}
+#fps-counter{font-size:10px;color:rgba(255,255,255,0.25);}
+
+/* DIRECTION ARROW */
+#dir-arrow{position:absolute;bottom:120px;left:20px;font-size:32px;
+  display:none;opacity:0;transition:opacity 0.3s;z-index:15;
+  text-shadow:0 0 20px rgba(80,220,120,0.5);}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<!-- START SCREEN -->
+<div id="start-screen">
+  <div class="logo-ring">
+    <div class="logo-inner">
+      <svg width="30" height="30" viewBox="0 0 32 32" fill="none">
+        <circle cx="16" cy="16" r="2.5" fill="#50dc78"/>
+        <circle cx="16" cy="6" r="1.5" fill="rgba(80,220,120,0.8)"/>
+        <circle cx="16" cy="26" r="1.5" fill="rgba(80,220,120,0.8)"/>
+        <circle cx="6" cy="16" r="1.5" fill="rgba(80,220,120,0.8)"/>
+        <circle cx="26" cy="16" r="1.5" fill="rgba(80,220,120,0.8)"/>
+        <path d="M16 9L16 23M9 16L23 16" stroke="rgba(80,220,120,0.4)" stroke-width="1"/>
+      </svg>
+    </div>
+  </div>
+  <h1>Floor Projection</h1>
+  <div class="sub">Body-Reactive AR Environment</div>
+
+  <!-- Permission info card -->
+  <div id="perm-card">
+    <div class="perm-title">This experience needs</div>
+    <div class="perm-items">
+      <div class="perm-item">
+        <div class="perm-icon">📷</div>
+        <div class="perm-text">
+          <strong>Camera Access</strong>
+          To track your body movement
+        </div>
+      </div>
+      <div class="perm-item">
+        <div class="perm-icon">🌐</div>
+        <div class="perm-text">
+          <strong>Internet Connection</strong>
+          To load AI body tracking model
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <button id="ar-btn">Allow &amp; Start</button>
+</div>
+
+<!-- PERMISSION ERROR SCREEN -->
+<div id="perm-error">
+  <div class="err-icon">🚫</div>
+  <h2>Camera Access Denied</h2>
+  <p>This experience needs your camera to track body movement and create interactive effects.</p>
+  <div class="fix-steps">
+    <p>📱 How to fix:</p>
+    <ol>
+      <li>Click the 🔒 lock icon in address bar</li>
+      <li>Find "Camera" → set to <strong>Allow</strong></li>
+      <li>Reload the page</li>
+    </ol>
+  </div>
+  <button id="retry-btn">Try Again</button>
+  <button id="skip-btn">Continue without camera</button>
+</div>
+
+<!-- MAIN UI -->
+<div id="hud"><div id="hud-dot"></div><span id="hud-text">Initializing...</span></div>
+<button id="view-btn">📷 ANGLED</button>
+<div id="dir-arrow"></div>
+
+<div id="mode-bar">
+  <button class="mbt on" data-m="leaves">🍃 Leaves</button>
+  <button class="mbt" data-m="water">💧 Water</button>
+  <button class="mbt" data-m="flowers">🌸 Flowers</button>
+  <button class="mbt" data-m="autumn">🍂 Autumn</button>
+</div>
+
+<!-- TRACKER PANEL -->
+<div id="tracker-panel">
+  <div id="tracker-header">
+    <div id="tracker-dot"></div>
+    <span id="tracker-label">Body Track</span>
+    <span id="cam-status"></span>
+  </div>
+  <div id="tracker-body">
+    <video id="cam-video" autoplay playsinline muted></video>
+    <canvas id="skel-canvas"></canvas>
+    <div id="no-cam-placeholder">
+      <div class="nc-icon">📷</div>
+      <div class="nc-text">Camera loading...</div>
+    </div>
+  </div>
+  <div id="tracker-footer">
+    <span id="move-status">Waiting...</span>
+    <span id="fps-counter"></span>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+<script>
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  RENDERER
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const canvas3d = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({canvas:canvas3d,alpha:true,antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+renderer.xr.enabled=true;
+
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(60,innerWidth/innerHeight,0.05,50);
+scene.add(new THREE.AmbientLight(0xffffff,0.7));
+const dirLight=new THREE.DirectionalLight(0xfffaea,2.5);
+dirLight.position.set(3,8,4); dirLight.castShadow=true;
+dirLight.shadow.mapSize.set(1024,1024);
+const sd=12;
+dirLight.shadow.camera.left=-sd; dirLight.shadow.camera.right=sd;
+dirLight.shadow.camera.top=sd; dirLight.shadow.camera.bottom=-sd;
+dirLight.shadow.bias=-0.0005;
+scene.add(dirLight);
+const shadowPlane=new THREE.Mesh(
+  new THREE.PlaneGeometry(30,30).rotateX(-Math.PI/2),
+  new THREE.ShadowMaterial({opacity:0.5})
+);
+shadowPlane.receiveShadow=true; shadowPlane.visible=false;
+scene.add(shadowPlane);
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  STATE
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+let mode='leaves', particles=[], hitSrc=null, floorFound=false, lastT=0;
+let floorY=0, isDemo=false, envGroup=null, viewMode='angled';
+let personDetected=false, bodyPos={x:0,z:0}, prevBodyPos={x:0,z:0};
+let bodyVel={x:0,z:0}, moveSpeed=0;
+let camAllowed=false, poseFrameTime=performance.now(), fpsArr=[];
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  TEXTURES
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function rand(a,b){return a+Math.random()*(b-a);}
+
+function makeLeafTex(hue,sat,autumn=false){
+  const sz=256,cv=document.createElement('canvas');
+  cv.width=cv.height=sz;
+  const x=cv.getContext('2d');
+  x.translate(sz/2,sz/2);
+  x.beginPath();
+  x.moveTo(0,-90); x.bezierCurveTo(50,-70,70,-10,45,35);
+  x.bezierCurveTo(30,70,0,90,0,90);
+  x.bezierCurveTo(0,90,-30,70,-45,35);
+  x.bezierCurveTo(-70,-10,-50,-70,0,-90);
+  const g=x.createLinearGradient(0,-90,0,90);
+  g.addColorStop(0,`hsla(${hue},${sat}%,52%,1)`);
+  g.addColorStop(0.6,`hsla(${hue+5},${sat-15}%,37%,1)`);
+  g.addColorStop(1,`hsla(${hue-10},${sat-20}%,22%,1)`);
+  x.fillStyle=g; x.fill();
+  x.strokeStyle=`hsla(${hue},${sat-30}%,18%,0.7)`;
+  x.lineWidth=4; x.lineCap='round';
+  x.beginPath(); x.moveTo(0,-85); x.lineTo(0,100); x.stroke();
+  x.lineWidth=2;
+  for(let i=-4;i<=3;i++){
+    const yy=i*18,len=30-Math.abs(i)*3;
+    x.beginPath(); x.moveTo(0,yy); x.quadraticCurveTo(len*.5,yy+5,len,yy+15); x.stroke();
+    x.beginPath(); x.moveTo(0,yy); x.quadraticCurveTo(-len*.5,yy+5,-len,yy+15); x.stroke();
+  }
+  if(autumn) for(let i=0;i<15;i++){
+    x.fillStyle=`rgba(50,20,0,${Math.random()*.3})`;
+    x.beginPath(); x.arc((Math.random()-.5)*60,(Math.random()-.5)*140,Math.random()*6,0,Math.PI*2); x.fill();
+  }
+  return new THREE.CanvasTexture(cv);
+}
+function makeFlowerTex(hue){
+  const sz=256,cv=document.createElement('canvas');
+  cv.width=cv.height=sz;
+  const x=cv.getContext('2d');
+  x.translate(sz/2,sz/2);
+  [{count:8,r:45,w:16,offset:0,cl:20,cd:-10},{count:8,r:35,w:14,offset:Math.PI/8,cl:35,cd:0}].forEach(l=>{
+    for(let i=0;i<l.count;i++){
+      x.save(); x.rotate((Math.PI*2/l.count)*i+l.offset);
+      const pg=x.createRadialGradient(0,-l.r/2,2,0,-l.r/2,l.r);
+      pg.addColorStop(0,`hsla(${hue+l.cl},90%,85%,1)`);
+      pg.addColorStop(0.7,`hsla(${hue},85%,65%,1)`);
+      pg.addColorStop(1,`hsla(${hue+l.cd},80%,40%,1)`);
+      x.fillStyle=pg; x.beginPath(); x.ellipse(0,-l.r*.6,l.w,l.r,0,0,Math.PI*2); x.fill();
+      x.restore();
+    }
+  });
+  const cg=x.createRadialGradient(0,0,0,0,0,16);
+  cg.addColorStop(0,'#fff6a3'); cg.addColorStop(.4,'#ffcc00');
+  cg.addColorStop(.8,'#d97b00'); cg.addColorStop(1,'#5c3300');
+  x.fillStyle=cg; x.beginPath(); x.arc(0,0,16,0,Math.PI*2); x.fill();
+  return new THREE.CanvasTexture(cv);
+}
+function makeLilyTex(){
+  const sz=256,cv=document.createElement('canvas');
+  cv.width=cv.height=sz;
+  const x=cv.getContext('2d');
+  x.translate(sz/2,sz/2);
+  x.beginPath(); x.arc(0,0,110,.4,Math.PI*2-.4); x.lineTo(0,0); x.closePath();
+  const g=x.createRadialGradient(0,0,0,0,0,110);
+  g.addColorStop(0,'#3a7c3a'); g.addColorStop(.7,'#245a24'); g.addColorStop(1,'#153d15');
+  x.fillStyle=g; x.fill();
+  x.strokeStyle='rgba(70,160,70,0.4)'; x.lineWidth=2;
+  for(let i=1;i<12;i++){
+    const a=(Math.PI*2/12)*i;
+    if(a>.3&&a<Math.PI*2-.3){
+      x.beginPath(); x.moveTo(0,0);
+      x.quadraticCurveTo(Math.cos(a+.2)*50,Math.sin(a+.2)*50,Math.cos(a)*100,Math.sin(a)*100);
+      x.stroke();
+    }
+  }
+  return new THREE.CanvasTexture(cv);
+}
+function makeWaveTex(){
+  const sz=512,cv=document.createElement('canvas');
+  cv.width=cv.height=sz;
+  const ctx=cv.getContext('2d'),c=sz/2;
+  [{r:200,w:20,a:1},{r:150,w:15,a:.6},{r:100,w:10,a:.3}].forEach(({r,w,a})=>{
+    const g=ctx.createRadialGradient(c,c,r-w,c,c,r+w);
+    g.addColorStop(0,'rgba(255,255,255,0)');
+    g.addColorStop(.5,`rgba(255,255,255,${a})`);
+    g.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(c,c,r+w,0,Math.PI*2); ctx.fill();
+  });
+  const s=ctx.createRadialGradient(c,c,0,c,c,50);
+  s.addColorStop(0,'rgba(255,255,255,0.9)'); s.addColorStop(1,'rgba(255,255,255,0)');
+  ctx.fillStyle=s; ctx.beginPath(); ctx.arc(c,c,50,0,Math.PI*2); ctx.fill();
+  return new THREE.CanvasTexture(cv);
+}
+
+const leafTex=[makeLeafTex(115,60),makeLeafTex(130,50),makeLeafTex(95,70)];
+const autumnTex=[makeLeafTex(15,85,true),makeLeafTex(35,90,true),makeLeafTex(5,80,true)];
+const flowerTex=[makeFlowerTex(280),makeFlowerTex(320),makeFlowerTex(210),makeFlowerTex(0)];
+const lilyTex=makeLilyTex();
+const waveTex=makeWaveTex();
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  FLOOR ENVIRONMENT
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function buildFloor(){
+  if(envGroup){scene.remove(envGroup); envGroup=null;}
+  envGroup=new THREE.Group(); envGroup.position.y=floorY; scene.add(envGroup);
+  const R=15, dummy=new THREE.Object3D();
+  if(mode==='leaves'||mode==='autumn'){
+    const tArr=mode==='leaves'?leafTex:autumnTex;
+    tArr.forEach(tex=>{
+      const inst=new THREE.InstancedMesh(new THREE.PlaneGeometry(.18,.25),
+        new THREE.MeshStandardMaterial({map:tex,alphaTest:.4,side:THREE.DoubleSide,roughness:.8}),3500);
+      inst.castShadow=true; inst.receiveShadow=true;
+      for(let i=0;i<3500;i++){
+        const r=Math.sqrt(Math.random())*R,th=Math.random()*Math.PI*2;
+        dummy.position.set(Math.cos(th)*r,.001+Math.random()*.02,Math.sin(th)*r);
+        dummy.rotation.set(-Math.PI/2+rand(-.1,.1),0,rand(0,Math.PI*2));
+        dummy.scale.setScalar(rand(.8,1.4)); dummy.updateMatrix(); inst.setMatrixAt(i,dummy.matrix);
+      }
+      envGroup.add(inst);
+    });
+  } else if(mode==='flowers'){
+    flowerTex.forEach(tex=>{
+      const inst=new THREE.InstancedMesh(new THREE.PlaneGeometry(.2,.2),
+        new THREE.MeshStandardMaterial({map:tex,alphaTest:.4,side:THREE.DoubleSide,roughness:.9}),1200);
+      inst.castShadow=true; inst.receiveShadow=true;
+      for(let i=0;i<1200;i++){
+        const r=Math.sqrt(Math.random())*R,th=Math.random()*Math.PI*2;
+        dummy.position.set(Math.cos(th)*r,.008+Math.random()*.02,Math.sin(th)*r);
+        dummy.rotation.set(-Math.PI/2+rand(-.1,.1),0,rand(0,Math.PI*2));
+        dummy.scale.setScalar(rand(.7,1.3)); dummy.updateMatrix(); inst.setMatrixAt(i,dummy.matrix);
+      }
+      envGroup.add(inst);
+    });
+    const li=new THREE.InstancedMesh(new THREE.PlaneGeometry(.2,.3),
+      new THREE.MeshStandardMaterial({map:leafTex[0],alphaTest:.4,side:THREE.DoubleSide,roughness:.8}),5000);
+    li.receiveShadow=true;
+    for(let i=0;i<5000;i++){
+      const r=Math.sqrt(Math.random())*R,th=Math.random()*Math.PI*2;
+      dummy.position.set(Math.cos(th)*r,.001+Math.random()*.005,Math.sin(th)*r);
+      dummy.rotation.set(-Math.PI/2,0,rand(0,Math.PI*2));
+      dummy.scale.setScalar(rand(.8,1.3)); dummy.updateMatrix(); li.setMatrixAt(i,dummy.matrix);
+    }
+    envGroup.add(li);
+  } else if(mode==='water'){
+    const pool=new THREE.Mesh(new THREE.PlaneGeometry(35,35).rotateX(-Math.PI/2),
+      new THREE.MeshStandardMaterial({color:0x00aaff,emissive:0x002255,transparent:true,
+        opacity:.75,roughness:.02,metalness:.95,depthWrite:false}));
+    pool.position.y=.002; pool.receiveShadow=true; envGroup.add(pool);
+    const lp=new THREE.InstancedMesh(new THREE.PlaneGeometry(.3,.3),
+      new THREE.MeshStandardMaterial({map:lilyTex,alphaTest:.4,side:THREE.DoubleSide,roughness:.8}),400);
+    lp.castShadow=true; lp.receiveShadow=true;
+    for(let i=0;i<400;i++){
+      const r=Math.sqrt(Math.random())*R,th=Math.random()*Math.PI*2;
+      dummy.position.set(Math.cos(th)*r,.004+Math.random()*.002,Math.sin(th)*r);
+      dummy.rotation.set(-Math.PI/2,0,rand(0,Math.PI*2));
+      dummy.scale.setScalar(rand(.6,1.5)); dummy.updateMatrix(); lp.setMatrixAt(i,dummy.matrix);
+    }
+    envGroup.add(lp);
+  }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  PARTICLES
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function spawnLeaf(px,pz,tArr){
+  const tex=tArr[Math.floor(Math.random()*tArr.length)];
+  const s=rand(.08,.15);
+  const mesh=new THREE.Mesh(new THREE.PlaneGeometry(s,s*1.5),
+    new THREE.MeshStandardMaterial({map:tex,alphaTest:.4,side:THREE.DoubleSide,roughness:.7}));
+  mesh.castShadow=true;
+  mesh.rotation.x=-Math.PI/2+rand(-.2,.2); mesh.rotation.z=rand(0,Math.PI*2);
+  mesh.position.set(px+rand(-.1,.1),floorY+.18+rand(0,.25),pz+rand(-.1,.1));
+  mesh.userData={vx:rand(-.025,.025)+bodyVel.x*.4,vy:rand(.01,.025),
+    vz:rand(-.025,.025)+bodyVel.z*.4,gravity:.0015,
+    floorY:floorY+.005,spinX:rand(-.05,.05),spinZ:rand(-.1,.1),
+    life:1,decay:rand(.004,.009),type:'leaf'};
+  scene.add(mesh); particles.push(mesh);
+}
+function spawnFlower(px,pz){
+  const tex=flowerTex[Math.floor(Math.random()*flowerTex.length)];
+  const s=rand(.08,.14);
+  const mesh=new THREE.Mesh(new THREE.PlaneGeometry(s,s),
+    new THREE.MeshStandardMaterial({map:tex,alphaTest:.4,side:THREE.DoubleSide,roughness:.9}));
+  mesh.castShadow=true;
+  mesh.rotation.x=-Math.PI/2+rand(-.2,.2); mesh.rotation.z=rand(0,Math.PI*2);
+  mesh.position.set(px+rand(-.15,.15),floorY+.2+rand(0,.2),pz+rand(-.15,.15));
+  mesh.userData={vx:rand(-.02,.02)+bodyVel.x*.5,vy:rand(.008,.02),
+    vz:rand(-.02,.02)+bodyVel.z*.5,gravity:.0012,
+    floorY:floorY+.006,spinX:rand(-.04,.04),spinZ:rand(-.08,.08),
+    life:1,decay:rand(.003,.008),type:'flower'};
+  scene.add(mesh); particles.push(mesh);
+}
+function spawnWave(px,pz){
+  const wave=new THREE.Mesh(new THREE.PlaneGeometry(.5,.5),
+    new THREE.MeshBasicMaterial({map:waveTex,color:0x88ccff,transparent:true,opacity:.9,
+      side:THREE.DoubleSide,depthWrite:false,blending:THREE.AdditiveBlending}));
+  wave.rotation.x=-Math.PI/2; wave.position.set(px,floorY+.006,pz);
+  wave.userData={scaleSpd:.02,life:1,decay:.015,type:'wave'};
+  scene.add(wave); particles.push(wave);
+  for(let i=0;i<10;i++){
+    const a=rand(0,Math.PI*2),spd=rand(.02,.06);
+    const drop=new THREE.Mesh(new THREE.SphereGeometry(rand(.004,.01),8,8),
+      new THREE.MeshStandardMaterial({color:0xffffff,roughness:0,metalness:1,transparent:true,opacity:.9}));
+    drop.castShadow=true; drop.position.set(px,floorY+.01,pz);
+    drop.userData={vx:Math.cos(a)*spd+bodyVel.x*.2,vy:rand(.04,.1),
+      vz:Math.sin(a)*spd+bodyVel.z*.2,gravity:.005,
+      life:1,decay:rand(.015,.03),type:'drop',floorY:floorY};
+    scene.add(drop); particles.push(drop);
+  }
+}
+function burst(px,py,pz){
+  if(mode==='leaves')      for(let i=0;i<8;i++) spawnLeaf(px,pz,leafTex);
+  else if(mode==='water')  spawnWave(px,pz);
+  else if(mode==='flowers'){for(let i=0;i<5;i++) spawnFlower(px,pz); for(let i=0;i<3;i++) spawnLeaf(px,pz,leafTex);}
+  else if(mode==='autumn') for(let i=0;i<10;i++) spawnLeaf(px,pz,autumnTex);
+}
+function updateParticles(){
+  const t=Date.now()*.001;
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i],d=p.userData;
+    if(d.type==='wave'){
+      d.scaleSpd*=1.05; p.scale.setScalar(p.scale.x+d.scaleSpd);
+      p.material.opacity=d.life*.9;
+    } else if(d.type==='drop'){
+      d.vy-=d.gravity;
+      p.position.x+=d.vx; p.position.y+=d.vy; p.position.z+=d.vz;
+      if(p.position.y<d.floorY){p.position.y=d.floorY;d.vy=Math.abs(d.vy)*.3;d.vx*=.5;d.vz*=.5;}
+    } else {
+      if(p.position.y>d.floorY){
+        d.vy-=d.gravity;
+        p.position.x+=d.vx; p.position.y+=d.vy; p.position.z+=d.vz;
+        p.rotation.x+=d.spinX; p.rotation.z+=d.spinZ;
+        if(p.position.y<=d.floorY){p.position.y=d.floorY;d.vy=0;d.vx=0;d.vz=0;p.rotation.x=-Math.PI/2;}
+      } else {
+        p.position.x+=Math.sin(t+p.id*.3)*.0003;
+        p.position.z+=Math.cos(t*.8+p.id*.5)*.0002;
+      }
+      if(d.life<.2) p.scale.setScalar(Math.max(.001,p.scale.x*.97));
+    }
+    d.life-=d.decay;
+    if(d.life<=0){scene.remove(p);p.geometry.dispose();p.material.dispose();particles.splice(i,1);}
+  }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  CAMERA PERMISSION + MEDIAPIPE
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const videoEl  = document.getElementById('cam-video');
+const skelCv   = document.getElementById('skel-canvas');
+const skelCtx  = skelCv.getContext('2d');
+const placeholder = document.getElementById('no-cam-placeholder');
+
+const SKEL_CONN=[
+  [11,12],[11,13],[13,15],[12,14],[14,16],
+  [11,23],[12,24],[23,24],
+  [23,25],[25,27],[27,29],[27,31],
+  [24,26],[26,28],[28,30],[28,32]
+];
+
+// ── STEP 1: Request camera permission explicitly ──
+async function requestCameraPermission(){
+  // Check if API exists
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
+    return {ok:false, reason:'api_missing'};
+  }
+
+  // Check existing permission state (Chrome/Edge)
+  if(navigator.permissions){
+    try{
+      const status = await navigator.permissions.query({name:'camera'});
+      if(status.state==='denied') return {ok:false, reason:'denied'};
+    } catch(e){/* Firefox doesn't support camera query */}
+  }
+
+  // Actually request the camera
+  try{
+    const constraints = {
+      video:{
+        facingMode:{ideal:'user'},
+        width:{ideal:320},
+        height:{ideal:240}
+      }
+    };
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    return {ok:true, stream};
+  } catch(err){
+    if(err.name==='NotAllowedError'||err.name==='PermissionDeniedError')
+      return {ok:false, reason:'denied'};
+    if(err.name==='NotFoundError'||err.name==='DevicesNotFoundError')
+      return {ok:false, reason:'no_device'};
+    if(err.name==='NotReadableError')
+      return {ok:false, reason:'in_use'};
+    return {ok:false, reason:'unknown', msg:err.message};
+  }
+}
+
+function showPermError(reason){
+  const errDiv = document.getElementById('perm-error');
+  const p = errDiv.querySelector('p');
+  const ol = errDiv.querySelector('ol');
+  errDiv.style.display='flex';
+
+  if(reason==='api_missing'){
+    errDiv.querySelector('h2').textContent='Not Supported';
+    p.textContent='Camera API not available. Please open this page via a local server (localhost) or HTTPS, not as a file:// URL.';
+    ol.innerHTML='<li>Install VS Code + Live Server extension</li><li>Right-click the HTML file → "Open with Live Server"</li><li>Or run: npx serve . in terminal</li>';
+  } else if(reason==='denied'){
+    ol.innerHTML='<li>Click the 🔒 icon in the address bar</li><li>Set Camera → <b>Allow</b></li><li>Reload the page</li>';
+  } else if(reason==='no_device'){
+    errDiv.querySelector('h2').textContent='No Camera Found';
+    p.textContent='No camera detected on this device.';
+    ol.innerHTML='<li>Connect an external webcam</li><li>Or continue without camera tracking</li>';
+  } else if(reason==='in_use'){
+    errDiv.querySelector('h2').textContent='Camera In Use';
+    p.textContent='Camera is being used by another app.';
+    ol.innerHTML='<li>Close other apps using the camera</li><li>Close other browser tabs with camera access</li><li>Try again</li>';
+  }
+}
+
+function startCameraFeed(stream){
+  videoEl.srcObject=stream;
+  camAllowed=true;
+  placeholder.querySelector('.nc-text').textContent='Loading AI...';
+
+  videoEl.onloadedmetadata=()=>{
+    videoEl.play();
+    skelCv.width=videoEl.videoWidth||320;
+    skelCv.height=videoEl.videoHeight||240;
+    placeholder.style.display='none'; // hide placeholder, show video
+    startPose();
+  };
+}
+
+function startPose(){
+  if(typeof Pose==='undefined'){
+    document.getElementById('move-status').textContent='AI model failed';
+    document.getElementById('cam-status').textContent='no model';
+    return;
+  }
+
+  const pose=new Pose({
+    locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}`
+  });
+  pose.setOptions({
+    modelComplexity:1,
+    smoothLandmarks:true,
+    enableSegmentation:false,
+    minDetectionConfidence:.55,
+    minTrackingConfidence:.5
+  });
+  pose.onResults(onPoseResult);
+  document.getElementById('move-status').textContent='Starting...';
+
+  ;(async function loop(){
+    if(videoEl.readyState>=2){
+      try{ await pose.send({image:videoEl}); }
+      catch(e){ console.warn('pose err',e); }
+    }
+    const now=performance.now();
+    fpsArr.push(Math.round(1000/(now-poseFrameTime)));
+    if(fpsArr.length>10) fpsArr.shift();
+    poseFrameTime=now;
+    document.getElementById('fps-counter').textContent=
+      Math.round(fpsArr.reduce((a,b)=>a+b)/fpsArr.length)+' fps';
+    requestAnimationFrame(loop);
+  })();
+}
+
+function onPoseResult(res){
+  skelCtx.clearRect(0,0,skelCv.width,skelCv.height);
+  if(!res.poseLandmarks||!res.poseLandmarks.length){
+    personDetected=false;
+    document.getElementById('tracker-dot').classList.remove('on');
+    document.getElementById('move-status').textContent='No person';
+    return;
+  }
+
+  personDetected=true;
+  document.getElementById('tracker-dot').classList.add('on');
+  const lm=res.poseLandmarks;
+  const W=skelCv.width,H=skelCv.height;
+
+  // Draw bones
+  SKEL_CONN.forEach(([a,b])=>{
+    if(lm[a].visibility<.4||lm[b].visibility<.4) return;
+    const isLeg=a>=23||b>=23;
+    skelCtx.strokeStyle=isLeg?'rgba(255,160,60,0.9)':'rgba(80,200,255,0.9)';
+    skelCtx.lineWidth=2.5;
+    skelCtx.beginPath();
+    skelCtx.moveTo((1-lm[a].x)*W,lm[a].y*H);
+    skelCtx.lineTo((1-lm[b].x)*W,lm[b].y*H);
+    skelCtx.stroke();
+  });
+
+  // Draw joints
+  lm.forEach((l,i)=>{
+    if(l.visibility<.4) return;
+    const key=[11,12,15,16,23,24,27,28].includes(i);
+    skelCtx.beginPath();
+    skelCtx.arc((1-l.x)*W,l.y*H,key?5:3,0,Math.PI*2);
+    skelCtx.fillStyle=key?'#50dc78':'rgba(255,255,255,0.7)';
+    skelCtx.fill();
+  });
+
+  // Compute body world position
+  const lh=lm[23],rh=lm[24];
+  if(lh&&rh&&lh.visibility>.4&&rh.visibility>.4){
+    const hx=((lh.x+rh.x)/2);
+    const hz=((lh.y+rh.y)/2);
+    prevBodyPos={x:bodyPos.x,z:bodyPos.z};
+    bodyPos={x:(hx-.5)*-6,z:(hz-.3)*4};
+    bodyVel={x:(bodyPos.x-prevBodyPos.x)*.35,z:(bodyPos.z-prevBodyPos.z)*.35};
+    moveSpeed=Math.sqrt(bodyVel.x**2+bodyVel.z**2);
+
+    // Status
+    let s='Still';
+    if(moveSpeed>.006) s='Moving';
+    if(moveSpeed>.015) s='Walking ↗';
+    if(moveSpeed>.03)  s='Running! 🏃';
+    document.getElementById('move-status').textContent=s;
+
+    // Direction arrow
+    const arr=document.getElementById('dir-arrow');
+    if(moveSpeed>.008){
+      arr.style.opacity='1';
+      const arrows=['→','↗','↑','↖','←','↙','↓','↘'];
+      arr.textContent=arrows[Math.round(Math.atan2(bodyVel.z,bodyVel.x)/(Math.PI/4)+8)%8];
+    } else {
+      arr.style.opacity='0';
+    }
+  }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  WEBXR
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const retMat=new THREE.MeshBasicMaterial({color:0x50dc78,transparent:true,opacity:.8,side:THREE.DoubleSide});
+const reticle=new THREE.Mesh(new THREE.RingGeometry(.12,.15,32).rotateX(-Math.PI/2),retMat);
+reticle.visible=false; scene.add(reticle);
+const hitMat4=new THREE.Matrix4();
+
+async function tryStartAR(){
+  try{
+    const ok=await navigator.xr?.isSessionSupported('immersive-ar');
+    if(!ok) throw 0;
+    const sess=await navigator.xr.requestSession('immersive-ar',{
+      requiredFeatures:['hit-test'],
+      optionalFeatures:['dom-overlay'],
+      domOverlay:{root:document.body}
+    });
+    renderer.xr.setReferenceSpaceType('local');
+    await renderer.xr.setSession(sess);
+    sess.addEventListener('end',()=>{hitSrc=null;floorFound=false;});
+    const vs=await sess.requestReferenceSpace('viewer');
+    hitSrc=await sess.requestHitTestSource({space:vs});
+    showMainUI();
+    renderer.setAnimationLoop(xrLoop);
+  } catch(e){ startDemo(); }
+}
+
+function xrLoop(time,frame){
+  if(!frame){renderer.render(scene,camera);return;}
+  updateParticles();
+  if(hitSrc){
+    const ref=renderer.xr.getReferenceSpace();
+    const hits=frame.getHitTestResults(hitSrc);
+    if(hits.length>0){
+      const pose=hits[0].getPose(ref);
+      hitMat4.fromArray(pose.transform.matrix);
+      reticle.visible=true; reticle.matrix.copy(hitMat4); reticle.matrixAutoUpdate=false;
+      const hp=new THREE.Vector3().setFromMatrixPosition(hitMat4);
+      if(!floorFound){
+        floorFound=true; floorY=hp.y;
+        shadowPlane.position.y=floorY; shadowPlane.visible=true;
+        buildFloor();
+        document.getElementById('hud-dot').classList.add('on');
+        document.getElementById('hud-text').textContent='WALK TO INTERACT';
+      }
+      const bx=personDetected?bodyPos.x:hp.x;
+      const bz=personDetected?bodyPos.z:hp.z;
+      if(time-lastT>100){burst(bx,hp.y,bz);lastT=time;}
+    } else {reticle.visible=false;}
+  }
+  renderer.render(scene,camera);
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  DEMO MODE
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function setDemoCamera(){
+  if(viewMode==='angled'){
+    camera.position.set(0,1.6,2.5); camera.lookAt(0,0,-2);
+    document.getElementById('view-btn').textContent='📷 ANGLED';
+  } else {
+    camera.position.set(0,8,.01); camera.lookAt(0,0,0);
+    document.getElementById('view-btn').textContent='🔭 TOP-DOWN';
+  }
+}
+
+function startDemo(){
+  isDemo=true; floorFound=true; floorY=0;
+  showMainUI(); setDemoCamera();
+  const fm=new THREE.Mesh(new THREE.PlaneGeometry(35,35).rotateX(-Math.PI/2),
+    new THREE.MeshStandardMaterial({color:0x0a110a,roughness:.9}));
+  fm.receiveShadow=true; fm.position.y=-.01; scene.add(fm);
+  shadowPlane.visible=true; shadowPlane.position.y=0;
+  buildFloor();
+
+  let lastD=0;
+  function onPtr(cx,cy,click=false){
+    const now=performance.now();
+    if(!click&&now-lastD<80) return; lastD=now;
+    const ray=new THREE.Raycaster();
+    ray.setFromCamera(new THREE.Vector2((cx/innerWidth)*2-1,-(cy/innerHeight)*2+1),camera);
+    const tgt=new THREE.Vector3();
+    if(ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0,1,0),0),tgt))
+      burst(tgt.x,0,tgt.z);
+  }
+  canvas3d.addEventListener('mousemove',e=>onPtr(e.clientX,e.clientY));
+  canvas3d.addEventListener('touchmove',e=>{e.preventDefault();onPtr(e.touches[0].clientX,e.touches[0].clientY);},{passive:false});
+  canvas3d.addEventListener('mousedown',e=>onPtr(e.clientX,e.clientY,true));
+  canvas3d.addEventListener('touchstart',e=>onPtr(e.touches[0].clientX,e.touches[0].clientY,true),{passive:false});
+
+  let lastBB=0;
+  renderer.setAnimationLoop(t=>{
+    updateParticles();
+    if(personDetected&&moveSpeed>.008&&t-lastBB>100){
+      burst(bodyPos.x,0,bodyPos.z); lastBB=t;
+    }
+    dirLight.position.set(camera.position.x+3,8,camera.position.z+4);
+    dirLight.target.position.set(0,0,0); dirLight.target.updateMatrixWorld();
+    renderer.render(scene,camera);
+  });
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  UI HELPERS
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function showMainUI(){
+  document.getElementById('start-screen').style.display='none';
+  document.getElementById('perm-error').style.display='none';
+  document.getElementById('hud').style.display='flex';
+  document.getElementById('mode-bar').style.display='flex';
+  document.getElementById('view-btn').style.display='block';
+  document.getElementById('tracker-panel').style.display='flex';
+  document.getElementById('dir-arrow').style.display='block';
+  document.getElementById('hud-dot').classList.add('on');
+  document.getElementById('hud-text').textContent='MOVE ON THE FLOOR';
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  MAIN ENTRY — "Allow & Start" button
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+document.getElementById('ar-btn').addEventListener('click', async ()=>{
+  document.getElementById('ar-btn').textContent='Requesting camera...';
+  document.getElementById('ar-btn').disabled=true;
+
+  // Ask for camera permission
+  const result = await requestCameraPermission();
+
+  if(result.ok){
+    // Permission granted — start camera feed
+    startCameraFeed(result.stream);
+    // Then start 3D
+    if(navigator.xr) tryStartAR();
+    else startDemo();
+  } else if(result.reason==='api_missing'){
+    showPermError('api_missing');
+  } else if(result.reason==='denied'){
+    showPermError('denied');
+  } else if(result.reason==='no_device'){
+    // No camera but can still run without tracking
+    showPermError('no_device');
+  } else {
+    showPermError('unknown');
+  }
+});
+
+// Retry button
+document.getElementById('retry-btn').addEventListener('click',()=>{
+  document.getElementById('perm-error').style.display='none';
+  document.getElementById('ar-btn').textContent='Allow & Start';
+  document.getElementById('ar-btn').disabled=false;
+});
+
+// Skip camera button
+document.getElementById('skip-btn').addEventListener('click',()=>{
+  document.getElementById('perm-error').style.display='none';
+  startDemo();
+});
+
+// Mode buttons
+document.querySelectorAll('.mbt').forEach(b=>{
+  b.addEventListener('click',()=>{
+    document.querySelectorAll('.mbt').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on'); mode=b.dataset.m;
+    if(floorFound||isDemo) buildFloor();
+  });
+});
+document.getElementById('view-btn').addEventListener('click',()=>{
+  viewMode=viewMode==='angled'?'topdown':'angled';
+  setDemoCamera();
+});
+window.addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+</script>
+</body>
+</html>
