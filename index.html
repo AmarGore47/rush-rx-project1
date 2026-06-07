@@ -117,8 +117,9 @@ canvas#c{display:block;width:100vw;height:100vh;}
 #tracker-body{position:relative;width:100%;aspect-ratio:4/3;
   background:#000;border:1px solid rgba(80,220,120,0.2);border-top:none;overflow:hidden;}
 #cam-video{position:absolute;inset:0;width:100%;height:100%;
-  object-fit:cover;transform:scaleX(-1);opacity:0.4;}
-#skel-canvas{position:absolute;inset:0;width:100%;height:100%;}
+  object-fit:cover;transform:scaleX(-1);opacity:0.4;
+  will-change:transform;image-rendering:auto;}
+#skel-canvas{position:absolute;inset:0;width:100%;height:100%;will-change:transform;}
 #no-cam-placeholder{position:absolute;inset:0;display:flex;flex-direction:column;
   align-items:center;justify-content:center;gap:6px;background:rgba(0,0,0,0.9);}
 #no-cam-placeholder .nc-icon{font-size:24px;opacity:0.3;}
@@ -236,8 +237,9 @@ canvas#c{display:block;width:100vw;height:100vh;}
 //  RENDERER
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 const canvas3d = document.getElementById('c');
-const renderer = new THREE.WebGLRenderer({canvas:canvas3d,alpha:true,antialias:true});
-renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+const renderer = new THREE.WebGLRenderer({canvas:canvas3d,alpha:true,antialias:false,
+  powerPreference:'high-performance',precision:'mediump'});
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.5)); // cap for performance
 renderer.setSize(innerWidth,innerHeight);
 renderer.shadowMap.enabled=true;
 renderer.shadowMap.type=THREE.PCFSoftShadowMap;
@@ -270,6 +272,9 @@ let floorY=0, isDemo=false, envGroup=null, viewMode='topdown';
 let personDetected=false, bodyPos={x:0,z:0}, prevBodyPos={x:0,z:0};
 let bodyVel={x:0,z:0}, moveSpeed=0;
 let camAllowed=false, poseFrameTime=performance.now(), fpsArr=[];
+// Position history buffer for latency compensation
+const POS_HISTORY=[];
+const POS_DELAY_MS=300; // 0.3s delay to sync with projector lag
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  TEXTURES — Photo-realistic versions
@@ -1050,7 +1055,7 @@ function switchCamera(){
   document.getElementById('tracker-dot').classList.remove('on');
   document.getElementById('move-status').textContent = 'Switching...';
   navigator.mediaDevices.getUserMedia({
-    video:{facingMode:{ideal:facingMode}, width:{ideal:320}, height:{ideal:240}}
+    video:{facingMode:{ideal:facingMode}, width:{ideal:320,max:480}, height:{ideal:240,max:360}, frameRate:{ideal:30,max:30}}
   }).then(stream => {
     currentStream = stream;
     startCameraFeed(stream);
@@ -1072,7 +1077,12 @@ async function requestCameraPermission(){
   }
   try{
     const stream = await navigator.mediaDevices.getUserMedia({
-      video:{facingMode:{ideal:'user'},width:{ideal:320},height:{ideal:240}}
+      video:{
+        facingMode:{ideal:'user'},
+        width:{ideal:320, max:480},
+        height:{ideal:240, max:360},
+        frameRate:{ideal:30, max:30}
+      }
     });
     return {ok:true, stream};
   } catch(err){
@@ -1124,34 +1134,44 @@ function startCameraFeed(stream){
 function startPose(){
   if(typeof Pose==='undefined'){
     document.getElementById('move-status').textContent='AI model failed';
-    document.getElementById('cam-status').textContent='no model';
     return;
   }
   const pose=new Pose({
     locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}`
   });
   pose.setOptions({
-    modelComplexity:1,
+    modelComplexity:0,          // fastest model
     smoothLandmarks:true,
     enableSegmentation:false,
-    minDetectionConfidence:.55,
-    minTrackingConfidence:.5
+    minDetectionConfidence:.5,
+    minTrackingConfidence:.45
   });
   pose.onResults(onPoseResult);
   document.getElementById('move-status').textContent='Starting...';
-  ;(async function loop(){
-    if(videoEl.readyState>=2){
-      try{ await pose.send({image:videoEl}); }
-      catch(e){ console.warn('pose err',e); }
+
+  // ── Throttled pose loop — don't fire faster than MediaPipe can process ──
+  let poseRunning = false;
+  let lastPoseTime = 0;
+  const POSE_INTERVAL = 60; // ms between pose calls (~16fps) — keeps video smooth
+
+  function poseLoop(){
+    const now = performance.now();
+    if(!poseRunning && videoEl.readyState>=2 && now-lastPoseTime >= POSE_INTERVAL){
+      poseRunning = true;
+      lastPoseTime = now;
+      pose.send({image:videoEl}).then(()=>{
+        poseRunning = false;
+        // FPS counter
+        fpsArr.push(Math.round(1000/(performance.now()-poseFrameTime)));
+        if(fpsArr.length>8) fpsArr.shift();
+        poseFrameTime = performance.now();
+        document.getElementById('fps-counter').textContent=
+          Math.round(fpsArr.reduce((a,b)=>a+b)/fpsArr.length)+' fps';
+      }).catch(()=>{ poseRunning=false; });
     }
-    const now=performance.now();
-    fpsArr.push(Math.round(1000/(now-poseFrameTime)));
-    if(fpsArr.length>10) fpsArr.shift();
-    poseFrameTime=now;
-    document.getElementById('fps-counter').textContent=
-      Math.round(fpsArr.reduce((a,b)=>a+b)/fpsArr.length)+' fps';
-    requestAnimationFrame(loop);
-  })();
+    requestAnimationFrame(poseLoop);
+  }
+  requestAnimationFrame(poseLoop);
 }
 
 function onPoseResult(res){
@@ -1167,11 +1187,10 @@ function onPoseResult(res){
   const lm=res.poseLandmarks;
   const W=skelCv.width, H=skelCv.height;
 
-  // Draw skeleton
+  // ── Draw skeleton ──
   SKEL_CONN.forEach(([a,b])=>{
-    if(lm[a].visibility<.4||lm[b].visibility<.4) return;
-    const isLeg=a>=23||b>=23;
-    skelCtx.strokeStyle=isLeg?'rgba(255,160,60,0.9)':'rgba(80,200,255,0.9)';
+    if(lm[a].visibility<.35||lm[b].visibility<.35) return;
+    skelCtx.strokeStyle=(a>=23||b>=23)?'rgba(255,160,60,0.9)':'rgba(80,200,255,0.9)';
     skelCtx.lineWidth=2.5;
     skelCtx.beginPath();
     skelCtx.moveTo((1-lm[a].x)*W,lm[a].y*H);
@@ -1179,7 +1198,7 @@ function onPoseResult(res){
     skelCtx.stroke();
   });
   lm.forEach((l,i)=>{
-    if(l.visibility<.4) return;
+    if(l.visibility<.35) return;
     const key=[11,12,15,16,23,24,27,28].includes(i);
     skelCtx.beginPath();
     skelCtx.arc((1-l.x)*W,l.y*H,key?5:3,0,Math.PI*2);
@@ -1187,52 +1206,67 @@ function onPoseResult(res){
     skelCtx.fill();
   });
 
-  // ── Body position on floor ──
-  // Use mid-hip X for left/right, and foot landmarks for Z depth
-  // MediaPipe landmarks are normalized 0-1, X=horizontal, Y=vertical in image
+  // ── Map body to floor coordinates ──
+  // Camera sees you head-on. MediaPipe X=0(left)..1(right), Y=0(top)..1(bottom)
+  // Floor world: X = left/right,  Z = near/far
+  // We can't know true depth from 2D, so we use:
+  //   floor X  ← hip horizontal position (image X) → maps to world X
+  //   floor Z  ← foot vertical position in image (image Y of ankles) → maps to world Z
+  //             (feet lower in frame = person closer = larger Z)
+
   const lhip=lm[23], rhip=lm[24];
-  const lank=lm[27], rank=lm[28]; // ankles
-  const lheel=lm[29]||lm[27], rheel=lm[30]||lm[28];
+  const lank=lm[27], rank=lm[28];
 
-  // Pick best foot landmarks (most visible)
-  const footL = (lank&&lank.visibility>.3) ? lank : lhip;
-  const footR = (rank&&rank.visibility>.3) ? rank : rhip;
+  if(lhip&&rhip&&(lhip.visibility>.3||rhip.visibility>.3)){
+    // Average what's visible
+    let hipX, footY;
+    if(lhip.visibility>.3 && rhip.visibility>.3){
+      hipX = (lhip.x + rhip.x) / 2;
+    } else if(lhip.visibility>.3){
+      hipX = lhip.x;
+    } else {
+      hipX = rhip.x;
+    }
 
-  if(lhip&&rhip&&lhip.visibility>.35&&rhip.visibility>.35){
-    // X: horizontal position in camera = left/right on floor
-    // Camera is mirrored (transform:scaleX(-1)) so we flip x
-    const rawX = (lhip.x + rhip.x) / 2; // 0=left edge, 1=right edge
-    const rawZ = (footL.y + footR.y) / 2; // 0=top of image, 1=bottom
+    // Use ankle Y if visible, else hip Y + offset estimate
+    const lv = lank&&lank.visibility>.3, rv = rank&&rank.visibility>.3;
+    if(lv&&rv)      footY = (lank.y + rank.y) / 2;
+    else if(lv)     footY = lank.y;
+    else if(rv)     footY = rank.y;
+    else            footY = (lhip.y + rhip.y)/2 + 0.3; // estimate feet below hips
 
     prevBodyPos = {x:bodyPos.x, z:bodyPos.z};
 
-    // Map to world space: X spans -5 to +5, Z spans -3 to +3
-    bodyPos = {
-      x: (rawX - 0.5) * 10,   // center=0, left=-5, right=+5
-      z: (rawZ - 0.5) * 8     // center=0, top=-4, bottom=+4
-    };
+    // Map to world — camera mirrored so flip X
+    // hipX: 0=person on right of screen → world +X, 1=left → world -X
+    const newX = (0.5 - hipX) * 12;   // ±6 world units
+    // footY: 0=top of screen (far), 1=bottom (near projector)
+    // Projector is behind camera so bottom of screen = closer = negative Z
+    const newZ = (footY - 0.5) * 10;  // ±5 world units
 
-    // Velocity = how much position changed this frame
-    const dx = bodyPos.x - prevBodyPos.x;
-    const dz = bodyPos.z - prevBodyPos.z;
-    bodyVel = {x: dx, z: dz};
-    moveSpeed = Math.sqrt(dx*dx + dz*dz);
+    // Smooth with lerp to reduce jitter (but stay responsive)
+    const SMOOTH = 0.55; // 0=no smoothing, 1=frozen
+    bodyPos.x = bodyPos.x * SMOOTH + newX * (1-SMOOTH);
+    bodyPos.z = bodyPos.z * SMOOTH + newZ * (1-SMOOTH);
 
-    // Low threshold — any real movement triggers particles
+    bodyVel.x = bodyPos.x - prevBodyPos.x;
+    bodyVel.z = bodyPos.z - prevBodyPos.z;
+    moveSpeed  = Math.sqrt(bodyVel.x*bodyVel.x + bodyVel.z*bodyVel.z);
+
     let s='Still';
-    if(moveSpeed>.005) s='Moving';
-    if(moveSpeed>.015) s='Walking';
-    if(moveSpeed>.04)  s='Running! 🏃';
+    if(moveSpeed>.008) s='Moving';
+    if(moveSpeed>.02)  s='Walking';
+    if(moveSpeed>.05)  s='Running 🏃';
     document.getElementById('move-status').textContent=
       s+' ('+bodyPos.x.toFixed(1)+','+bodyPos.z.toFixed(1)+')';
 
-    const arr=document.getElementById('dir-arrow');
-    if(moveSpeed>.005){
-      arr.style.opacity='1';
+    if(moveSpeed>.008){
+      document.getElementById('dir-arrow').style.opacity='1';
       const arrows=['→','↗','↑','↖','←','↙','↓','↘'];
-      arr.textContent=arrows[Math.round(Math.atan2(dz,dx)/(Math.PI/4)+8)%8];
+      document.getElementById('dir-arrow').textContent=
+        arrows[Math.round(Math.atan2(bodyVel.z,bodyVel.x)/(Math.PI/4)+8)%8];
     } else {
-      arr.style.opacity='0';
+      document.getElementById('dir-arrow').style.opacity='0';
     }
   }
 }
@@ -1334,14 +1368,28 @@ function startDemo(){
   let lastBB=0;
   renderer.setAnimationLoop(t=>{
     updateParticles();
-    // Spawn particles whenever person is moving (very low threshold)
-    if(personDetected && moveSpeed>.005 && t-lastBB>80){
-      // Clamp to visible floor area
-      const bx=Math.max(-8,Math.min(8,bodyPos.x));
-      const bz=Math.max(-8,Math.min(8,bodyPos.z));
-      burst(bx,0,bz);
-      lastBB=t;
+
+    if(personDetected){
+      // Push current position into history with timestamp
+      POS_HISTORY.push({t, x:bodyPos.x, z:bodyPos.z, spd:moveSpeed});
+      // Keep only last 2 seconds of history
+      while(POS_HISTORY.length>0 && t - POS_HISTORY[0].t > 2000) POS_HISTORY.shift();
+
+      // Find position from POS_DELAY_MS ago for sync with projector
+      const targetT = t - POS_DELAY_MS;
+      let delayed = POS_HISTORY[0]; // oldest as fallback
+      for(let i=0; i<POS_HISTORY.length; i++){
+        if(POS_HISTORY[i].t >= targetT){ delayed = POS_HISTORY[i]; break; }
+      }
+
+      if(delayed && delayed.spd > .008 && t - lastBB > 70){
+        const bx = Math.max(-8, Math.min(8, delayed.x));
+        const bz = Math.max(-8, Math.min(8, delayed.z));
+        burst(bx, 0, bz);
+        lastBB = t;
+      }
     }
+
     dirLight.position.set(camera.position.x+3,8,camera.position.z+4);
     dirLight.target.position.set(0,0,0); dirLight.target.updateMatrixWorld();
     renderer.render(scene,camera);
