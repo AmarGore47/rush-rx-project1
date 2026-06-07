@@ -7,6 +7,7 @@
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
 body{background:#000;overflow:hidden;font-family:'Segoe UI',sans-serif;}
+video{max-width:100%;max-height:100%;display:block;}
 canvas#c{display:block;width:100vw;height:100vh;}
 
 /* START SCREEN */
@@ -117,8 +118,10 @@ canvas#c{display:block;width:100vw;height:100vh;}
 #tracker-body{position:relative;width:100%;aspect-ratio:4/3;
   background:#000;border:1px solid rgba(80,220,120,0.2);border-top:none;overflow:hidden;}
 #cam-video{position:absolute;inset:0;width:100%;height:100%;
+  max-width:100%;max-height:100%;
   object-fit:cover;transform:scaleX(-1);opacity:0.4;
-  will-change:transform;image-rendering:auto;}
+  will-change:transform;image-rendering:auto;
+  display:block;}
 #skel-canvas{position:absolute;inset:0;width:100%;height:100%;will-change:transform;}
 #no-cam-placeholder{position:absolute;inset:0;display:flex;flex-direction:column;
   align-items:center;justify-content:center;gap:6px;background:rgba(0,0,0,0.9);}
@@ -271,7 +274,7 @@ let mode='leaves', particles=[], hitSrc=null, floorFound=false, lastT=0;
 let floorY=0, isDemo=false, envGroup=null, viewMode='topdown';
 let personDetected=false, bodyPos={x:0,z:0}, prevBodyPos={x:0,z:0};
 let bodyVel={x:0,z:0}, moveSpeed=0;
-let camAllowed=false, poseFrameTime=performance.now(), fpsArr=[];
+let camAllowed=false, poseFrameTime=performance.now(), fpsArr=[], poseActive=false;
 // Position history buffer for latency compensation
 const POS_HISTORY=[];
 const POS_DELAY_MS=300; // 0.3s delay to sync with projector lag
@@ -1050,8 +1053,15 @@ let currentStream = null;
 
 function switchCamera(){
   facingMode = facingMode === 'user' ? 'environment' : 'user';
+  // Stop old tracks
   if(currentStream) currentStream.getTracks().forEach(t => t.stop());
+  // Clear video immediately — prevents fullscreen flash
+  videoEl.pause();
+  videoEl.onloadedmetadata = null;
   videoEl.srcObject = null;
+  // Reset pose state
+  personDetected = false;
+  poseActive = false; // stop old pose loop from sending
   document.getElementById('tracker-dot').classList.remove('on');
   document.getElementById('move-status').textContent = 'Switching...';
   navigator.mediaDevices.getUserMedia({
@@ -1119,14 +1129,17 @@ function showPermError(reason){
 }
 
 function startCameraFeed(stream){
-  videoEl.srcObject=stream;
-  camAllowed=true;
+  // Clear any previous handler first
+  videoEl.onloadedmetadata = null;
+  videoEl.srcObject = stream;
+  camAllowed = true;
   placeholder.querySelector('.nc-text').textContent='Loading AI...';
-  videoEl.onloadedmetadata=()=>{
-    videoEl.play();
-    skelCv.width=videoEl.videoWidth||320;
-    skelCv.height=videoEl.videoHeight||240;
-    placeholder.style.display='none';
+  placeholder.style.display='flex'; // show while switching
+  videoEl.onloadedmetadata = ()=>{
+    videoEl.play().catch(()=>{});
+    skelCv.width = videoEl.videoWidth||320;
+    skelCv.height = videoEl.videoHeight||240;
+    placeholder.style.display = 'none';
     startPose();
   };
 }
@@ -1153,8 +1166,10 @@ function startPose(){
   let poseRunning = false;
   let lastPoseTime = 0;
   const POSE_INTERVAL = 60; // ms between pose calls (~16fps) — keeps video smooth
+  poseActive = true;
 
   function poseLoop(){
+    if(!poseActive) return; // stop loop if camera switched
     const now = performance.now();
     if(!poseRunning && videoEl.readyState>=2 && now-lastPoseTime >= POSE_INTERVAL){
       poseRunning = true;
